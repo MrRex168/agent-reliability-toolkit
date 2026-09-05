@@ -4,6 +4,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
+from .failures import Failure, classify_failures
 from .tools import ToolTrace, evaluate_tool_calls
 
 
@@ -25,6 +26,7 @@ class RunResult:
     output: Any
     latency_seconds: float
     failures: list[str] = field(default_factory=list)
+    failure_categories: list[Failure] = field(default_factory=list)
 
 
 @dataclass
@@ -74,7 +76,7 @@ ContainsEvaluator = BasicEvaluator
 
 
 def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int = 10, evaluator: Evaluator | None = None) -> EvaluationReport:
-    """Run each test repeatedly and calculate reliability, including tool-call checks."""
+    """Run each test repeatedly and calculate reliability with failure diagnostics."""
     if runs_per_test < 1:
         raise ValueError("runs_per_test must be at least 1")
     evaluator = evaluator or BasicEvaluator()
@@ -91,7 +93,7 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
                 trace = raw_output if isinstance(raw_output, ToolTrace) else None
                 output = trace.output if trace else raw_output
                 success, failures = evaluator.evaluate(output, expected)
-                if trace and expected.get("tool_calls", []) or trace and expected.get("tool_names", []):
+                if trace and (expected.get("tool_calls") or expected.get("tool_names")):
                     tool_success, tool_failures = evaluate_tool_calls(trace, expected)
                     success = success and tool_success
                     failures.extend(tool_failures)
@@ -99,7 +101,8 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
                 output = ""
                 success = False
                 failures = [f"agent error: {type(exc).__name__}: {exc}"]
-            results.append(RunResult(test_id, run_number, success, output, time.perf_counter() - started, failures))
+            categories = classify_failures(failures)
+            results.append(RunResult(test_id, run_number, success, output, time.perf_counter() - started, failures, categories))
 
     total = len(results)
     successful = sum(r.success for r in results)
