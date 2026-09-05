@@ -2,14 +2,14 @@
 
 Evaluate whether an AI agent actually works reliably — before putting it into production.
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, and turn failures into actionable diagnostics.
+**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, and detect regressions between agent versions.
 
 ## Why this exists
 
 An agent can pass a demo and still fail in production. A single successful run tells you almost nothing about reliability.
 
 ```text
-Test cases → Agent → Repeated runs → Assertions → Failure analysis → Reliability report
+Test cases → Agent → Repeated runs → Assertions → Failure analysis → Regression check
 ```
 
 ## What it checks
@@ -21,6 +21,8 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **Tool calls** — expected tools, arguments, call order, and failed executions
 - **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
 - **Latency** — average execution time
+- **Regression detection** — compare a new evaluation against a baseline
+- **Pass/fail gates** — fail CI or scripts when reliability drops beyond an allowed threshold
 - **JSON export** — keep results for CI, regression testing, or your own tooling
 
 ## Quick start
@@ -41,6 +43,38 @@ Export a machine-readable report:
 ```bash
 agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 ```
+
+## Regression testing
+
+Save a known-good evaluation as a baseline, then compare future agent versions against it:
+
+```bash
+agent-reliability eval examples/cases.yaml --runs 20 --json current.json --baseline baseline.json
+```
+
+The command checks overall task success, consistency, reliability score, and per-test success rates. By default, **any drop is a regression** and the command exits with status `1`.
+
+Allow a small measurement change with `--threshold`:
+
+```bash
+agent-reliability eval examples/cases.yaml --runs 20 --baseline baseline.json --threshold 2
+```
+
+Example:
+
+```text
+Regression Check: FAIL
+───────────────────────────
+[REGRESSION] task_success: 95.0 → 88.0 (-7.0)
+[OK] consistency: 100.0 → 100.0 (+0.0)
+[REGRESSION] reliability_score: 97.5 → 94.0 (-3.5)
+[REGRESSION] test:refund-policy: 100.0 → 80.0 (-20.0)
+New failures       3
+Resolved failures  0
+Allowed drop       0.0
+```
+
+This makes the toolkit usable as a lightweight quality gate before shipping an agent change.
 
 ## Test cases
 
@@ -135,31 +169,6 @@ The taxonomy is intentionally small and deterministic:
 | `TOOL_EXECUTION_ERROR` | A tool invocation failed |
 | `UNKNOWN` | Failure did not match a known category |
 
-## Example report
-
-```text
-AI Agent Reliability Report
-───────────────────────────
-Tests             2
-Runs per test     10
-Total runs        20
-Successful        17
-Failed            3
-
-Task success      85.0%
-Consistency       50.0%
-Avg latency       0.400s
-Reliability       67.5/100
-
-Failure Analysis
-
-  refund-policy — run 4
-    [MEDIUM] OUTPUT_MISMATCH: missing expected text: '30 days'
-
-  order-status — run 7
-    [HIGH] AGENT_ERROR: agent error: TimeoutError: request timed out
-```
-
 ## Reliability score
 
 The baseline score is intentionally transparent:
@@ -178,16 +187,19 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - Tool-call correctness
 - Failure classification
 
-### v0.4 — next
+### v0.4 ✓
 
-- Regex evaluators
-- LLM-as-a-judge evaluator
 - Regression comparison
 - Thresholds and pass/fail gates
 
+### v0.5 — next
+
+- Regex evaluators
+- LLM-as-a-judge evaluator
+- GitHub Actions CI evaluation
+
 ### Later
 
-- GitHub Actions CI evaluation
 - LangGraph/LangChain adapters
 - MCP tool evaluation
 - OpenTelemetry integration
@@ -201,7 +213,7 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 
 The goal is not another observability platform. The goal is a small tool that answers one question quickly:
 
-> **Can I trust this agent to perform this task repeatedly?**
+> **Can I trust this agent to perform this task repeatedly — and did the latest version get better or worse?**
 
 ## License
 
