@@ -1,0 +1,15 @@
+agent: examples.agent:agent
+
+cases:
+  - id: refund-policy
+    input: "What is the refund policy?"
+    expected:
+      contains:
+        - "30 days"
+        - "original payment method"
+
+  - id: order-status
+    input: "Where is order 1234?"
+    expected:
+      contains:
+        - "shipped"
