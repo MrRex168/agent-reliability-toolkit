@@ -6,27 +6,21 @@ Evaluate whether an AI agent actually works reliably — before putting it into 
 
 ## Why this exists
 
-An agent can pass a demo and still fail in production.
-
-A single successful run tells you almost nothing about reliability. This toolkit lets you define representative tasks, run an agent repeatedly, evaluate the result, and quantify failure modes.
+An agent can pass a demo and still fail in production. A single successful run tells you almost nothing about reliability.
 
 ```text
 Test cases → Agent → Repeated runs → Assertions → Reliability report
 ```
 
-## MVP features
+## What it checks
 
-- Python CLI
-- YAML test cases
-- Any Python agent function through a tiny adapter interface
-- Repeat the same test multiple times
-- Deterministic assertions for text/JSON outputs
-- Task success rate
-- Consistency across repeated runs
-- Latency measurement
-- Failure details per run
-- JSON report export
-- No hosted service or API key required for the core toolkit
+- **Task success** — did the agent satisfy the expected outcome?
+- **Consistency** — does it keep passing across repeated runs?
+- **Structured output** — required keys and exact JSON objects
+- **Text output** — required phrases and exact values
+- **Latency** — average execution time
+- **Failures** — agent exceptions and assertion failures
+- **JSON export** — keep results for CI, regression testing, or your own tooling
 
 ## Quick start
 
@@ -38,55 +32,62 @@ cd agent-reliability-toolkit
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-```
-
-Run the example:
-
-```bash
 agent-reliability eval examples/cases.yaml --runs 10
 ```
 
-Export JSON:
+Export a machine-readable report:
 
 ```bash
 agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 ```
 
-## Test case format
+## Test cases
 
-```yaml
-- id: refund-policy
-  input: "What is the refund policy?"
-  expected:
-    contains:
-      - "30 days"
-      - "original payment method"
-
-- id: order-status
-  input: "Where is order 1234?"
-  expected:
-    contains:
-      - "shipped"
-```
-
-The current MVP uses a simple `contains` assertion so evaluations are reproducible and easy to understand. More evaluators can be added without changing the test format.
-
-## Agent adapter
-
-Your agent only needs to implement a function accepting a string and returning a string:
-
-```python
-from agent_reliability import Agent
-
-class MyAgent(Agent):
-    def run(self, prompt: str) -> str:
-        return my_agent_framework.invoke(prompt)
-```
-
-For the CLI example, the test file can point at a Python module exposing `agent`:
+Text evaluation:
 
 ```yaml
 agent: examples.agent:agent
+
+cases:
+  - id: refund-policy
+    input: "What is the refund policy?"
+    expected:
+      contains:
+        - "30 days"
+        - "original payment method"
+```
+
+Structured-output evaluation:
+
+```yaml
+agent: examples.structured_agent:agent
+
+cases:
+  - id: order-status
+    input: "Where is order 1234?"
+    expected:
+      required_keys:
+        - answer
+        - category
+      json_equals:
+        answer: "Order 1234 is shipped."
+        category: "order"
+```
+
+## Agent adapter
+
+Your agent only needs a `run(prompt)` method. It can return either text or a Python dictionary/list for structured evaluations.
+
+```python
+class MyAgent:
+    def run(self, prompt: str):
+        return my_agent_framework.invoke(prompt)
+```
+
+The CLI loads an adapter with `module:symbol` syntax:
+
+```yaml
+agent: my_agent:agent
 ```
 
 ## Example report
@@ -101,36 +102,40 @@ Successful        18
 Failed            2
 
 Task success      90.0%
-Consistency       90.0%
-Avg latency       0.4s
-Reliability      90/100
+Consistency       50.0%
+Avg latency       0.400s
+Reliability       70.0/100
 
 Failures
-  refund-policy   1/10
-  order-status    1/10
+  refund-policy run 4: missing expected text: '30 days'
+  order-status run 7: agent error: TimeoutError: request timed out
 ```
 
 ## Reliability score
 
-The MVP score is intentionally transparent:
+The baseline score is intentionally transparent:
 
 - **Task success** = successful runs / total runs
-- **Consistency** = tests that produced the same pass/fail outcome on every run, weighted across runs
+- **Consistency** = test cases with identical pass/fail outcomes across all repeated runs / total test cases
 - **Reliability score** = average of task success and consistency
 
-This is a baseline engineering metric, not a claim that an agent is safe or production-ready. Domain-specific evaluators should be added for high-stakes systems.
+This is an engineering baseline, not a safety certification or guarantee of production readiness.
 
 ## Roadmap
 
-### Next
+### v0.2
 
+- Structured output assertions ✓
 - Tool-call correctness
-- Structured JSON/schema assertions
-- Regex and exact-match evaluators
-- Retry/failure classification
+- Failure classification
+- Regex evaluators
+
+### v0.3
+
 - LLM-as-a-judge evaluator
-- Regression comparison between evaluation runs
-- GitHub Actions integration
+- Regression comparison
+- GitHub Actions CI evaluation
+- Thresholds and pass/fail gates
 
 ### Later
 
