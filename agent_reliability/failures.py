@@ -28,8 +28,17 @@ def classify_failure(message: str) -> Failure:
         return Failure(FailureCategory.AGENT_ERROR, message, "HIGH")
     if "tool call failed" in text:
         return Failure(FailureCategory.TOOL_EXECUTION_ERROR, message, "HIGH")
-    if "expected tool" in text or "missing expected tool call" in text:
+
+    # Tool-selection failures include a wrong tool name at a specific call index
+    # as well as missing/unexpected tool-call counts or names.
+    if (
+        "expected exactly" in text and "tool call" in text
+        or "expected tool" in text
+        or "missing expected tool call" in text
+        or ("tool call #" in text and "expected " in text and ", got " in text)
+    ):
         return Failure(FailureCategory.TOOL_SELECTION_ERROR, message, "HIGH")
+
     if "tool call #" in text and "argument" in text:
         return Failure(FailureCategory.TOOL_ARGUMENT_ERROR, message, "HIGH")
     if "structured json" in text or "required key" in text or "expected json" in text:
