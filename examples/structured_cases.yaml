@@ -1,0 +1,21 @@
+agent: examples.structured_agent:agent
+
+cases:
+  - id: refund-policy
+    input: "What is the refund policy?"
+    expected:
+      required_keys:
+        - answer
+        - category
+      contains:
+        - "30 days"
+
+  - id: order-status
+    input: "Where is order 1234?"
+    expected:
+      required_keys:
+        - answer
+        - category
+      json_equals:
+        answer: "Order 1234 is shipped."
+        category: "order"
