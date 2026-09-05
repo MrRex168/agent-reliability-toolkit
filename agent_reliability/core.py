@@ -4,6 +4,8 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
+from .tools import ToolTrace, evaluate_tool_calls
+
 
 class Agent(Protocol):
     """Minimal interface an agent adapter needs to implement."""
@@ -46,21 +48,17 @@ class BasicEvaluator:
     """Deterministic evaluator for text and structured agent outputs."""
     def evaluate(self, output: Any, expected: dict[str, Any]) -> tuple[bool, list[str]]:
         failures: list[str] = []
-
         for phrase in expected.get("contains", []):
             if str(phrase).lower() not in str(output).lower():
                 failures.append(f"missing expected text: {phrase!r}")
-
         if "equals" in expected and output != expected["equals"]:
             failures.append(f"expected exact output {expected['equals']!r}, got {output!r}")
-
         if "json_equals" in expected:
             wanted = expected["json_equals"]
             if not isinstance(output, dict):
                 failures.append("expected structured JSON output, got non-object output")
             elif output != wanted:
                 failures.append(f"expected JSON {wanted!r}, got {output!r}")
-
         required_keys = expected.get("required_keys", [])
         if required_keys:
             if not isinstance(output, dict):
@@ -69,7 +67,6 @@ class BasicEvaluator:
                 for key in required_keys:
                     if key not in output:
                         failures.append(f"missing required key: {key!r}")
-
         return not failures, failures
 
 
@@ -77,7 +74,7 @@ ContainsEvaluator = BasicEvaluator
 
 
 def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int = 10, evaluator: Evaluator | None = None) -> EvaluationReport:
-    """Run each test repeatedly and calculate baseline reliability metrics."""
+    """Run each test repeatedly and calculate reliability, including tool-call checks."""
     if runs_per_test < 1:
         raise ValueError("runs_per_test must be at least 1")
     evaluator = evaluator or BasicEvaluator()
@@ -90,8 +87,14 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
         for run_number in range(1, runs_per_test + 1):
             started = time.perf_counter()
             try:
-                output = agent.run(prompt)
+                raw_output = agent.run(prompt)
+                trace = raw_output if isinstance(raw_output, ToolTrace) else None
+                output = trace.output if trace else raw_output
                 success, failures = evaluator.evaluate(output, expected)
+                if trace and expected.get("tool_calls", []) or trace and expected.get("tool_names", []):
+                    tool_success, tool_failures = evaluate_tool_calls(trace, expected)
+                    success = success and tool_success
+                    failures.extend(tool_failures)
             except Exception as exc:
                 output = ""
                 success = False
@@ -101,7 +104,6 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
     total = len(results)
     successful = sum(r.success for r in results)
     task_success = successful / total * 100 if total else 0.0
-
     consistent_tests = 0
     for case in cases:
         outcomes = [r.success for r in results if r.test_id == str(case["id"])]
@@ -110,5 +112,4 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
     consistency = consistent_tests / len(cases) * 100 if cases else 0.0
     average_latency = sum(r.latency_seconds for r in results) / total if total else 0.0
     reliability = (task_success + consistency) / 2
-
     return EvaluationReport(len(cases), runs_per_test, total, successful, total - successful, task_success, consistency, average_latency, reliability, results)
