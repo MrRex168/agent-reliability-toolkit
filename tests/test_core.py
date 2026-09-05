@@ -15,24 +15,31 @@ class FlakyAgent:
         return "The answer is 42." if self.calls % 2 else "I don't know."
 
 
+class StructuredAgent:
+    def run(self, prompt: str) -> dict:
+        return {"answer": "42", "confidence": 0.95}
+
+
 def test_stable_agent_is_reliable():
-    report = evaluate_cases(
-        StableAgent(),
-        [{"id": "answer", "input": "What is the answer?", "expected": {"contains": ["42"]}}],
-        runs_per_test=4,
-    )
+    report = evaluate_cases(StableAgent(), [{"id": "answer", "input": "What is the answer?", "expected": {"contains": ["42"]}}], runs_per_test=4)
     assert report.task_success == 100
     assert report.consistency == 100
     assert report.reliability_score == 100
 
 
 def test_flaky_agent_exposes_inconsistency():
-    report = evaluate_cases(
-        FlakyAgent(),
-        [{"id": "answer", "input": "What is the answer?", "expected": {"contains": ["42"]}}],
-        runs_per_test=4,
-    )
+    report = evaluate_cases(FlakyAgent(), [{"id": "answer", "input": "What is the answer?", "expected": {"contains": ["42"]}}], runs_per_test=4)
     assert report.task_success == 50
     assert report.consistency == 0
     assert report.reliability_score == 25
     assert report.failed == 2
+
+
+def test_structured_output_required_keys():
+    report = evaluate_cases(StructuredAgent(), [{"id": "structured", "input": "Return data", "expected": {"required_keys": ["answer", "confidence"]}}], runs_per_test=2)
+    assert report.task_success == 100
+
+
+def test_structured_output_exact_match():
+    report = evaluate_cases(StructuredAgent(), [{"id": "structured", "input": "Return data", "expected": {"json_equals": {"answer": "42", "confidence": 0.95}}}], runs_per_test=2)
+    assert report.task_success == 100
