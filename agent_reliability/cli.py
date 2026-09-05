@@ -9,12 +9,12 @@ from typing import Any
 import yaml
 
 from .core import evaluate_cases
+from .tools import ToolTrace, evaluate_tool_calls
 
 
 def _load_symbol(spec: str) -> Any:
     module_name, symbol = spec.split(":", 1)
-    module = importlib.import_module(module_name)
-    return getattr(module, symbol)
+    return getattr(importlib.import_module(module_name), symbol)
 
 
 def _load_cases(path: Path) -> tuple[Any, list[dict[str, Any]]]:
@@ -45,7 +45,6 @@ def _print_report(report) -> None:
     print(f"Consistency       {report.consistency:.1f}%")
     print(f"Avg latency       {report.average_latency_seconds:.3f}s")
     print(f"Reliability       {report.reliability_score:.1f}/100")
-
     failures = [r for r in report.runs if not r.success]
     if failures:
         print("\nFailures")
