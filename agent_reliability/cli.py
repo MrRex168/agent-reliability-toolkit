@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from .core import evaluate_cases
+from .regression import compare_reports
 
 
 def _load_symbol(spec: str) -> Any:
@@ -54,6 +55,22 @@ def _print_report(report) -> None:
                 print(f"    [{failure.severity}] {failure.category.value}: {failure.message}")
 
 
+def _print_regression(regression) -> None:
+    status = "PASS" if regression.passed else "FAIL"
+    print(f"\nRegression Check: {status}")
+    print("───────────────────────────")
+    for change in regression.changes:
+        marker = "REGRESSION" if change.regressed else "OK"
+        print(
+            f"[{marker}] {change.metric}: "
+            f"{change.baseline:.1f} → {change.current:.1f} "
+            f"({change.delta:+.1f})"
+        )
+    print(f"New failures       {regression.new_failures}")
+    print(f"Resolved failures  {regression.resolved_failures}")
+    print(f"Allowed drop       {regression.threshold:.1f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate AI agent reliability through repeated tests.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -61,15 +78,24 @@ def main() -> None:
     eval_parser.add_argument("file", type=Path, help="YAML evaluation file")
     eval_parser.add_argument("--runs", type=int, default=10, help="Runs per test case (default: 10)")
     eval_parser.add_argument("--json", dest="json_path", type=Path, help="Write the full report as JSON")
+    eval_parser.add_argument("--baseline", type=Path, help="Compare this evaluation against a previous JSON report")
+    eval_parser.add_argument("--threshold", type=float, default=0.0, help="Allowed metric drop before regression (default: 0)")
     args = parser.parse_args()
 
     if args.command == "eval":
         agent, cases = _load_cases(args.file)
         report = evaluate_cases(agent, cases, runs_per_test=args.runs)
         _print_report(report)
+        report_dict = report.to_dict()
         if args.json_path:
-            args.json_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+            args.json_path.write_text(json.dumps(report_dict, indent=2), encoding="utf-8")
             print(f"\nJSON report written to {args.json_path}")
+        if args.baseline:
+            baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
+            regression = compare_reports(baseline, report_dict, threshold=args.threshold)
+            _print_regression(regression)
+            if not regression.passed:
+                raise SystemExit(1)
 
 
 if __name__ == "__main__":
