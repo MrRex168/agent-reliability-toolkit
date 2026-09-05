@@ -12,6 +12,9 @@ license = {text = "MIT"}
 authors = [{name = "MrRex168"}]
 dependencies = ["PyYAML>=6.0"]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [project.scripts]
 agent-reliability = "agent_reliability.cli:main"
 
