@@ -9,7 +9,6 @@ from typing import Any
 import yaml
 
 from .core import evaluate_cases
-from .tools import ToolTrace, evaluate_tool_calls
 
 
 def _load_symbol(spec: str) -> Any:
@@ -45,12 +44,14 @@ def _print_report(report) -> None:
     print(f"Consistency       {report.consistency:.1f}%")
     print(f"Avg latency       {report.average_latency_seconds:.3f}s")
     print(f"Reliability       {report.reliability_score:.1f}/100")
+
     failures = [r for r in report.runs if not r.success]
     if failures:
-        print("\nFailures")
+        print("\nFailure Analysis")
         for result in failures:
-            reason = "; ".join(result.failures) or "evaluation failed"
-            print(f"  {result.test_id} run {result.run_number}: {reason}")
+            print(f"\n  {result.test_id} — run {result.run_number}")
+            for failure in result.failure_categories:
+                print(f"    [{failure.severity}] {failure.category.value}: {failure.message}")
 
 
 def main() -> None:
