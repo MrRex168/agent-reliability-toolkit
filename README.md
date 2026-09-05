@@ -2,14 +2,14 @@
 
 Evaluate whether an AI agent actually works reliably — before putting it into production.
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, and turn failures into a machine-readable reliability report.
+**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, and turn failures into actionable diagnostics.
 
 ## Why this exists
 
 An agent can pass a demo and still fail in production. A single successful run tells you almost nothing about reliability.
 
 ```text
-Test cases → Agent → Repeated runs → Assertions → Reliability report
+Test cases → Agent → Repeated runs → Assertions → Failure analysis → Reliability report
 ```
 
 ## What it checks
@@ -18,8 +18,9 @@ Test cases → Agent → Repeated runs → Assertions → Reliability report
 - **Consistency** — does it keep passing across repeated runs?
 - **Structured output** — required keys and exact JSON objects
 - **Text output** — required phrases and exact values
+- **Tool calls** — expected tools, arguments, call order, and failed executions
+- **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
 - **Latency** — average execution time
-- **Failures** — agent exceptions and assertion failures
 - **JSON export** — keep results for CI, regression testing, or your own tooling
 
 ## Quick start
@@ -74,9 +75,27 @@ cases:
         category: "order"
 ```
 
+Tool-call evaluation:
+
+```yaml
+agent: examples.tool_agent:agent
+
+cases:
+  - id: order-status
+    input: "Where is order 1234?"
+    expected:
+      contains:
+        - "shipped"
+      tool_calls:
+        - name: get_order
+          arguments:
+            order_id: "1234"
+      tool_call_mode: exact
+```
+
 ## Agent adapter
 
-Your agent only needs a `run(prompt)` method. It can return either text or a Python dictionary/list for structured evaluations.
+Your agent only needs a `run(prompt)` method. It can return text, a Python dictionary/list, or a `ToolTrace` containing the output and recorded tool calls.
 
 ```python
 class MyAgent:
@@ -84,11 +103,37 @@ class MyAgent:
         return my_agent_framework.invoke(prompt)
 ```
 
+For tool evaluation, return a `ToolTrace` with normalized `ToolCall` records. See `examples/tool_agent.py` for a complete example.
+
 The CLI loads an adapter with `module:symbol` syntax:
 
 ```yaml
 agent: my_agent:agent
 ```
+
+## Failure analysis
+
+Failed runs are classified automatically so you can see *why* an agent failed, not just that it failed.
+
+```text
+Failure Analysis
+
+  order-status — run 3
+    [HIGH] TOOL_SELECTION_ERROR: tool call #1: expected 'get_order', got 'search_orders'
+    [HIGH] TOOL_ARGUMENT_ERROR: tool call #1 argument 'order_id': expected '1234', got '1243'
+```
+
+The taxonomy is intentionally small and deterministic:
+
+| Category | Meaning |
+|---|---|
+| `AGENT_ERROR` | The agent itself raised an exception |
+| `OUTPUT_MISMATCH` | Text or exact output did not match |
+| `STRUCTURED_OUTPUT_ERROR` | JSON/object structure did not match |
+| `TOOL_SELECTION_ERROR` | The wrong or missing tool was selected |
+| `TOOL_ARGUMENT_ERROR` | A tool received an unexpected argument value |
+| `TOOL_EXECUTION_ERROR` | A tool invocation failed |
+| `UNKNOWN` | Failure did not match a known category |
 
 ## Example report
 
@@ -98,17 +143,21 @@ AI Agent Reliability Report
 Tests             2
 Runs per test     10
 Total runs        20
-Successful        18
-Failed            2
+Successful        17
+Failed            3
 
-Task success      90.0%
+Task success      85.0%
 Consistency       50.0%
 Avg latency       0.400s
-Reliability       70.0/100
+Reliability       67.5/100
 
-Failures
-  refund-policy run 4: missing expected text: '30 days'
-  order-status run 7: agent error: TimeoutError: request timed out
+Failure Analysis
+
+  refund-policy — run 4
+    [MEDIUM] OUTPUT_MISMATCH: missing expected text: '30 days'
+
+  order-status — run 7
+    [HIGH] AGENT_ERROR: agent error: TimeoutError: request timed out
 ```
 
 ## Reliability score
@@ -123,22 +172,22 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 
 ## Roadmap
 
-### v0.2
+### v0.3 ✓
 
-- Structured output assertions ✓
+- Structured output assertions
 - Tool-call correctness
 - Failure classification
+
+### v0.4 — next
+
 - Regex evaluators
-
-### v0.3
-
 - LLM-as-a-judge evaluator
 - Regression comparison
-- GitHub Actions CI evaluation
 - Thresholds and pass/fail gates
 
 ### Later
 
+- GitHub Actions CI evaluation
 - LangGraph/LangChain adapters
 - MCP tool evaluation
 - OpenTelemetry integration
