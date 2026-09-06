@@ -2,7 +2,7 @@
 
 Evaluate whether an AI agent actually works reliably — before putting it into production.
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, and detect regressions between agent versions.
+**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, trace executions with OpenTelemetry, and detect regressions between agent versions.
 
 ## 30-second demo
 
@@ -36,6 +36,7 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **MCP tool traces** — normalize MCP-style calls without forcing an MCP SDK dependency
 - **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
 - **Latency** — average execution time
+- **OpenTelemetry traces** — optional execution spans and evaluation attributes
 - **Regression detection** — compare a new evaluation against a baseline
 - **Pass/fail gates** — fail CI when reliability drops beyond an allowed threshold
 - **Framework adapters** — LangChain, LangGraph, and generic MCP traces
@@ -144,6 +145,44 @@ MCP-style records can also represent failed execution:
 That becomes a failed `ToolCall`, which the existing failure classifier reports as `TOOL_EXECUTION_ERROR`.
 
 For SDK-specific trace shapes, use `output_parser` and `calls_parser` rather than coupling the core package to a particular SDK release.
+
+## OpenTelemetry integration
+
+v0.7 adds optional tracing without forcing an observability backend or an OpenTelemetry dependency on every user.
+
+Install the extra:
+
+```bash
+pip install -e '.[otel]'
+```
+
+Wrap an agent's `run()` method:
+
+```python
+from agent_reliability import instrument_agent
+
+agent = instrument_agent(my_agent, service_name="my-agent")
+result = agent.run("Where is order 1234?")
+```
+
+For evaluation-aware instrumentation, use the low-level helpers:
+
+```python
+from agent_reliability import record_evaluation, trace_agent_run
+
+with trace_agent_run(tracer, test_id="order-status", run_number=3) as span:
+    result = agent.run("Where is order 1234?")
+    record_evaluation(
+        span,
+        success=True,
+        failure_count=0,
+        reliability_score=100.0,
+    )
+```
+
+The toolkit records namespaced attributes such as `agent_reliability.success`, `agent_reliability.failure_count`, `agent_reliability.reliability_score`, and `agent_reliability.latency_ms`. Failures are also recorded as span exceptions.
+
+OpenTelemetry is deliberately backend-neutral: export traces to the collector or tracing backend your application already uses. The toolkit does not require Jaeger, Grafana, Datadog, or another specific vendor.
 
 ## Regex evaluation
 
@@ -280,9 +319,17 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - Deterministic adapter tests and runnable example
 - No MCP SDK dependency in the core package
 
+### v0.7 ✓
+
+- Optional OpenTelemetry tracing integration
+- Agent execution spans
+- Evaluation result attributes and events
+- Exception recording
+- Backend-neutral instrumentation
+- No mandatory OpenTelemetry dependency in the core package
+
 ### Next
 
-- OpenTelemetry integration
 - Historical evaluation database
 - Web dashboard
 - Hosted evaluation platform
