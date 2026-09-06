@@ -61,6 +61,7 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **Latency** — average execution time
 - **Regression detection** — compare a new evaluation against a baseline
 - **Pass/fail gates** — fail CI or scripts when reliability drops beyond an allowed threshold
+- **Framework adapters** — plug LangChain runnables or LangGraph graphs into the same evaluation engine
 - **JSON export** — keep results for CI, regression testing, or your own tooling
 
 ## Quick start
@@ -76,6 +77,49 @@ Export a machine-readable report:
 ```bash
 agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 ```
+
+## LangChain adapter
+
+If your agent or runnable exposes LangChain's standard `invoke()` interface, wrap it without adding LangChain as a dependency of this toolkit. LangChain's current APIs use `invoke()` for synchronous execution. citeturn1search0turn1search7
+
+```python
+from agent_reliability import LangChainAdapter, evaluate_cases
+
+agent = LangChainAdapter(my_langchain_agent)
+report = evaluate_cases(agent, cases, runs_per_test=20)
+```
+
+The adapter normalizes common string, message-like, and `{"output": ...}` results. For application-specific outputs, provide an `output_parser`:
+
+```python
+agent = LangChainAdapter(
+    my_langchain_agent,
+    output_parser=lambda result: result.content,
+)
+```
+
+## LangGraph adapter
+
+Compiled LangGraph workflows expose `invoke()` and return application-defined state. The adapter supplies a sensible messages-based input and lets you define how the final state becomes the value evaluated by the toolkit. citeturn1search1turn1search2
+
+```python
+from agent_reliability import LangGraphAdapter, evaluate_cases
+
+agent = LangGraphAdapter(my_graph)
+report = evaluate_cases(agent, cases, runs_per_test=20)
+```
+
+For a graph with custom state, define both input and output normalization:
+
+```python
+agent = LangGraphAdapter(
+    my_graph,
+    input_builder=lambda prompt: {"question": prompt},
+    output_parser=lambda state: state["answer"],
+)
+```
+
+The adapters intentionally use a small duck-typed interface rather than importing either framework. This keeps the base package lightweight and lets you install framework versions independently.
 
 ## Regex evaluation
 
@@ -258,16 +302,18 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - Provider-agnostic LLM-as-a-judge evaluator
 - Semantic evaluation with thresholds
 
-### v0.5.1
+### v0.5.1 ✓
 
 - Dedicated unreliable-agent demo
 - 30-second quick-start evaluation
 - CI regression quality gate
 - Improved developer experience and examples
+- LangChain adapter
+- LangGraph adapter
+- Framework-agnostic adapter design with no extra core dependencies
 
 ### Next
 
-- LangGraph/LangChain adapters
 - MCP tool evaluation
 - OpenTelemetry integration
 - Web dashboard
