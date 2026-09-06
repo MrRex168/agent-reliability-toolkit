@@ -2,7 +2,7 @@
 
 Evaluate whether an AI agent actually works reliably — before putting it into production.
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, and detect regressions between agent versions.
+**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, and detect regressions between agent versions.
 
 ## Why this exists
 
@@ -17,7 +17,8 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **Task success** — did the agent satisfy the expected outcome?
 - **Consistency** — does it keep passing across repeated runs?
 - **Structured output** — required keys and exact JSON objects
-- **Text output** — required phrases and exact values
+- **Text output** — required phrases, regex patterns, and exact values
+- **Semantic quality** — optional LLM-as-a-judge scoring against explicit criteria
 - **Tool calls** — expected tools, arguments, call order, and failed executions
 - **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
 - **Latency** — average execution time
@@ -44,6 +45,47 @@ Export a machine-readable report:
 agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 ```
 
+## Regex evaluation
+
+Use regex when an exact string is too strict but the output still needs to follow a predictable pattern:
+
+```yaml
+expected:
+  regex:
+    - "order \\d+ is shipped\\.?"
+```
+
+Patterns are matched case-insensitively and with multiline support. Invalid patterns are reported as evaluation failures instead of crashing the run.
+
+## LLM-as-a-judge evaluation
+
+Deterministic assertions are excellent for structure and exact behavior, but many agent tasks are semantic. v0.5 adds a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
+
+```python
+from agent_reliability import BasicEvaluator, LLMJudgeEvaluator, evaluate_cases
+
+class MyJudge:
+    def judge(self, output, input_text, criteria):
+        # Call your preferred LLM provider here.
+        return 0.92, "The response directly answers the question."
+
+evaluator = BasicEvaluator(LLMJudgeEvaluator(MyJudge()))
+report = evaluate_cases(agent, cases, runs_per_test=10, evaluator=evaluator)
+```
+
+The test case stays provider-neutral:
+
+```yaml
+expected:
+  judge:
+    criteria:
+      - "The response directly answers the user's question."
+      - "The response does not invent unsupported facts."
+    threshold: 0.80
+```
+
+The judge returns a score from `0.0` to `1.0`. A score below the configured threshold fails the run. No API key or LLM dependency is required by the core package, which keeps local tests and CI deterministic unless you explicitly supply a live judge.
+
 ## Regression testing
 
 Save a known-good evaluation as a baseline, then compare future agent versions against it:
@@ -58,20 +100,6 @@ Allow a small measurement change with `--threshold`:
 
 ```bash
 agent-reliability eval examples/cases.yaml --runs 20 --baseline baseline.json --threshold 2
-```
-
-Example:
-
-```text
-Regression Check: FAIL
-───────────────────────────
-[REGRESSION] task_success: 95.0 → 88.0 (-7.0)
-[OK] consistency: 100.0 → 100.0 (+0.0)
-[REGRESSION] reliability_score: 97.5 → 94.0 (-3.5)
-[REGRESSION] test:refund-policy: 100.0 → 80.0 (-20.0)
-New failures       3
-Resolved failures  0
-Allowed drop       0.0
 ```
 
 This makes the toolkit usable as a lightweight quality gate before shipping an agent change.
@@ -192,14 +220,15 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - Regression comparison
 - Thresholds and pass/fail gates
 
-### v0.5 — next
+### v0.5 ✓
 
 - Regex evaluators
-- LLM-as-a-judge evaluator
+- Provider-agnostic LLM-as-a-judge evaluator
+- Semantic evaluation with thresholds
+
+### Next
+
 - GitHub Actions CI evaluation
-
-### Later
-
 - LangGraph/LangChain adapters
 - MCP tool evaluation
 - OpenTelemetry integration
