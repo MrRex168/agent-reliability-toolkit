@@ -5,7 +5,7 @@ from .failures import Failure, FailureCategory, classify_failure, classify_failu
 from .judge import Judge, JudgeResult, LLMJudgeEvaluator
 from .regression import RegressionChange, RegressionReport, compare_reports
 from .tools import ToolCall, ToolRecorder, ToolTrace, evaluate_tool_calls
-from .adapters import LangChainAdapter, LangGraphAdapter
+from .adapters import LangChainAdapter, LangGraphAdapter, MCPTraceAdapter, normalize_mcp_call
 
 __all__ = [
     "Agent",
@@ -19,6 +19,8 @@ __all__ = [
     "LLMJudgeEvaluator",
     "LangChainAdapter",
     "LangGraphAdapter",
+    "MCPTraceAdapter",
+    "normalize_mcp_call",
     "RegressionChange",
     "RegressionReport",
     "ToolCall",
@@ -30,4 +32,4 @@ __all__ = [
     "evaluate_cases",
     "evaluate_tool_calls",
 ]
-__version__ = "0.5.1"
+__version__ = "0.6.0"
