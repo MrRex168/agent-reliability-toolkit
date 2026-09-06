@@ -1,0 +1,15 @@
+{
+  "tests": 2,
+  "runs_per_test": 10,
+  "total_runs": 20,
+  "successful": 20,
+  "failed": 0,
+  "task_success": 100.0,
+  "consistency": 100.0,
+  "average_latency_seconds": 0.0,
+  "reliability_score": 100.0,
+  "runs": [
+    {"test_id": "refund-policy", "success": true},
+    {"test_id": "order-status", "success": true}
+  ]
+}
