@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from .core import evaluate_cases
+from .history import EvaluationHistory
 from .regression import compare_reports
 
 
@@ -71,15 +72,51 @@ def _print_regression(regression) -> None:
     print(f"Allowed drop       {regression.threshold:.1f}")
 
 
+def _print_history(records) -> None:
+    print("\nEvaluation History")
+    print("──────────────────")
+    if not records:
+        print("No evaluations stored.")
+        return
+    for record in records:
+        version = f" v{record.version}" if record.version else ""
+        print(
+            f"#{record.id}  {record.created_at}  {record.agent}{version}  "
+            f"reliability={record.reliability_score:.1f}  "
+            f"success={record.task_success:.1f}%  "
+            f"runs={record.total_runs}  failed={record.failed_runs}"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate AI agent reliability through repeated tests.")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
     eval_parser = subparsers.add_parser("eval", help="Run an evaluation")
     eval_parser.add_argument("file", type=Path, help="YAML evaluation file")
     eval_parser.add_argument("--runs", type=int, default=10, help="Runs per test case (default: 10)")
     eval_parser.add_argument("--json", dest="json_path", type=Path, help="Write the full report as JSON")
     eval_parser.add_argument("--baseline", type=Path, help="Compare this evaluation against a previous JSON report")
     eval_parser.add_argument("--threshold", type=float, default=0.0, help="Allowed metric drop before regression (default: 0)")
+
+    history_parser = subparsers.add_parser("history", help="Manage stored evaluation history")
+    history_parser.add_argument("--db", type=Path, default=Path(".agent-reliability/history.db"), help="SQLite database path")
+    history_subparsers = history_parser.add_subparsers(dest="history_command", required=True)
+
+    save_parser = history_subparsers.add_parser("save", help="Save a JSON evaluation report")
+    save_parser.add_argument("report", type=Path, help="Evaluation JSON report")
+    save_parser.add_argument("--agent", default="unknown", help="Agent name")
+    save_parser.add_argument("--version", help="Agent version")
+
+    list_parser = history_subparsers.add_parser("list", help="List stored evaluations")
+    list_parser.add_argument("--limit", type=int, default=20, help="Maximum records to show")
+
+    show_parser = history_subparsers.add_parser("show", help="Show a stored evaluation")
+    show_parser.add_argument("id", type=int, help="Evaluation ID")
+
+    delete_parser = history_subparsers.add_parser("delete", help="Delete a stored evaluation")
+    delete_parser.add_argument("id", type=int, help="Evaluation ID")
+
     args = parser.parse_args()
 
     if args.command == "eval":
@@ -96,6 +133,20 @@ def main() -> None:
             _print_regression(regression)
             if not regression.passed:
                 raise SystemExit(1)
+        return
+
+    history = EvaluationHistory(args.db)
+    if args.history_command == "save":
+        report = json.loads(args.report.read_text(encoding="utf-8"))
+        record_id = history.save(report, agent=args.agent, version=args.version)
+        print(f"Saved evaluation #{record_id} to {args.db}")
+    elif args.history_command == "list":
+        _print_history(history.list(args.limit))
+    elif args.history_command == "show":
+        print(json.dumps(history.get(args.id), indent=2))
+    elif args.history_command == "delete":
+        history.delete(args.id)
+        print(f"Deleted evaluation #{args.id}")
 
 
 if __name__ == "__main__":
