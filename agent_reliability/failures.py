@@ -29,18 +29,21 @@ def classify_failure(message: str) -> Failure:
     if "tool call failed" in text:
         return Failure(FailureCategory.TOOL_EXECUTION_ERROR, message, "HIGH")
 
+    # Argument mismatches are checked before selection because a wrong tool call
+    # can also carry incorrect arguments; both diagnostics should be preserved.
+    if "tool call #" in text and "argument" in text:
+        return Failure(FailureCategory.TOOL_ARGUMENT_ERROR, message, "HIGH")
+
     # Tool-selection failures include a wrong tool name at a specific call index
     # as well as missing/unexpected tool-call counts or names.
     if (
-        "expected exactly" in text and "tool call" in text
+        ("expected exactly" in text and "tool call" in text)
         or "expected tool" in text
         or "missing expected tool call" in text
         or ("tool call #" in text and "expected " in text and ", got " in text)
     ):
         return Failure(FailureCategory.TOOL_SELECTION_ERROR, message, "HIGH")
 
-    if "tool call #" in text and "argument" in text:
-        return Failure(FailureCategory.TOOL_ARGUMENT_ERROR, message, "HIGH")
     if "structured json" in text or "required key" in text or "expected json" in text:
         return Failure(FailureCategory.STRUCTURED_OUTPUT_ERROR, message, "HIGH")
     if "missing expected text" in text or "expected exact output" in text:
