@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Protocol
 
 from .failures import Failure, classify_failures
+from .judge import LLMJudgeEvaluator
 from .tools import ToolTrace, evaluate_tool_calls
 
 
@@ -15,7 +17,9 @@ class Agent(Protocol):
 
 class Evaluator(Protocol):
     """Protocol for pluggable evaluators."""
-    def evaluate(self, output: Any, expected: dict[str, Any]) -> tuple[bool, list[str]]: ...
+    def evaluate(
+        self, output: Any, expected: dict[str, Any], *, input_text: str = ""
+    ) -> tuple[bool, list[str]]: ...
 
 
 @dataclass
@@ -48,11 +52,29 @@ class EvaluationReport:
 
 class BasicEvaluator:
     """Deterministic evaluator for text and structured agent outputs."""
-    def evaluate(self, output: Any, expected: dict[str, Any]) -> tuple[bool, list[str]]:
+
+    def __init__(self, judge: LLMJudgeEvaluator | None = None):
+        self.judge = judge
+
+    def evaluate(
+        self,
+        output: Any,
+        expected: dict[str, Any],
+        *,
+        input_text: str = "",
+    ) -> tuple[bool, list[str]]:
         failures: list[str] = []
         for phrase in expected.get("contains", []):
             if str(phrase).lower() not in str(output).lower():
                 failures.append(f"missing expected text: {phrase!r}")
+        for pattern in expected.get("regex", []):
+            try:
+                matched = re.search(str(pattern), str(output), re.IGNORECASE | re.MULTILINE)
+            except re.error as exc:
+                failures.append(f"invalid regex {pattern!r}: {exc}")
+                continue
+            if not matched:
+                failures.append(f"regex did not match: {pattern!r}")
         if "equals" in expected and output != expected["equals"]:
             failures.append(f"expected exact output {expected['equals']!r}, got {output!r}")
         if "json_equals" in expected:
@@ -69,13 +91,24 @@ class BasicEvaluator:
                 for key in required_keys:
                     if key not in output:
                         failures.append(f"missing required key: {key!r}")
+        if self.judge and expected.get("judge"):
+            judge_success, judge_failures = self.judge.evaluate(
+                output, expected, input_text=input_text
+            )
+            if not judge_success:
+                failures.extend(judge_failures)
         return not failures, failures
 
 
 ContainsEvaluator = BasicEvaluator
 
 
-def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int = 10, evaluator: Evaluator | None = None) -> EvaluationReport:
+def evaluate_cases(
+    agent: Agent,
+    cases: list[dict[str, Any]],
+    runs_per_test: int = 10,
+    evaluator: Evaluator | None = None,
+) -> EvaluationReport:
     """Run each test repeatedly and calculate reliability with failure diagnostics."""
     if runs_per_test < 1:
         raise ValueError("runs_per_test must be at least 1")
@@ -92,7 +125,7 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
                 raw_output = agent.run(prompt)
                 trace = raw_output if isinstance(raw_output, ToolTrace) else None
                 output = trace.output if trace else raw_output
-                success, failures = evaluator.evaluate(output, expected)
+                success, failures = evaluator.evaluate(output, expected, input_text=prompt)
                 if trace and (expected.get("tool_calls") or expected.get("tool_names")):
                     tool_success, tool_failures = evaluate_tool_calls(trace, expected)
                     success = success and tool_success
@@ -102,7 +135,17 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
                 success = False
                 failures = [f"agent error: {type(exc).__name__}: {exc}"]
             categories = classify_failures(failures)
-            results.append(RunResult(test_id, run_number, success, output, time.perf_counter() - started, failures, categories))
+            results.append(
+                RunResult(
+                    test_id,
+                    run_number,
+                    success,
+                    output,
+                    time.perf_counter() - started,
+                    failures,
+                    categories,
+                )
+            )
 
     total = len(results)
     successful = sum(r.success for r in results)
@@ -115,4 +158,15 @@ def evaluate_cases(agent: Agent, cases: list[dict[str, Any]], runs_per_test: int
     consistency = consistent_tests / len(cases) * 100 if cases else 0.0
     average_latency = sum(r.latency_seconds for r in results) / total if total else 0.0
     reliability = (task_success + consistency) / 2
-    return EvaluationReport(len(cases), runs_per_test, total, successful, total - successful, task_success, consistency, average_latency, reliability, results)
+    return EvaluationReport(
+        len(cases),
+        runs_per_test,
+        total,
+        successful,
+        total - successful,
+        task_success,
+        consistency,
+        average_latency,
+        reliability,
+        results,
+    )
