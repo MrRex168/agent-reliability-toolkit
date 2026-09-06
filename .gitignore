@@ -11,3 +11,4 @@ build/
 *.egg-info/
 report.json
 .DS_Store
+.agent-reliability/
