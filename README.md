@@ -4,6 +4,43 @@ Evaluate whether an AI agent actually works reliably — before putting it into 
 
 **Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, and detect regressions between agent versions.
 
+## 30-second demo
+
+Clone the repo, install it, and run the intentionally unreliable demo agent:
+
+```bash
+git clone https://github.com/MrRex168/agent-reliability-toolkit.git
+cd agent-reliability-toolkit
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+agent-reliability eval examples/unreliable_cases.yaml --runs 20
+```
+
+The demo agent fails intermittently on purpose. Repeated runs expose failures that a single successful demo would hide.
+
+Example:
+
+```text
+AI Agent Reliability Report
+───────────────────────────
+Tests             2
+Runs per test     20
+Total runs        40
+Successful        34
+Failed            6
+
+Task success      85.0%
+Consistency       0.0%
+Reliability       42.5/100
+
+Failure Analysis
+  refund-policy — run 5
+    [HIGH] OUTPUT_MISMATCH: missing expected text: '30 days'
+```
+
+Your own agent needs only a `run(prompt)` method. The toolkit does not require a specific agent framework or LLM provider.
+
 ## Why this exists
 
 An agent can pass a demo and still fail in production. A single successful run tells you almost nothing about reliability.
@@ -31,11 +68,6 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/MrRex168/agent-reliability-toolkit.git
-cd agent-reliability-toolkit
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
 agent-reliability eval examples/cases.yaml --runs 10
 ```
 
@@ -59,7 +91,7 @@ Patterns are matched case-insensitively and with multiline support. Invalid patt
 
 ## LLM-as-a-judge evaluation
 
-Deterministic assertions are excellent for structure and exact behavior, but many agent tasks are semantic. v0.5 adds a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
+Deterministic assertions are excellent for structure and exact behavior, but many agent tasks are semantic. The toolkit provides a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
 
 ```python
 from agent_reliability import BasicEvaluator, LLMJudgeEvaluator, evaluate_cases
@@ -226,9 +258,15 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - Provider-agnostic LLM-as-a-judge evaluator
 - Semantic evaluation with thresholds
 
+### v0.5.1
+
+- Dedicated unreliable-agent demo
+- 30-second quick-start evaluation
+- CI regression quality gate
+- Improved developer experience and examples
+
 ### Next
 
-- GitHub Actions CI evaluation
 - LangGraph/LangChain adapters
 - MCP tool evaluation
 - OpenTelemetry integration
