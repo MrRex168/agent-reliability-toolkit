@@ -46,7 +46,6 @@ def _print_report(report) -> None:
     print(f"Consistency       {report.consistency:.1f}%")
     print(f"Avg latency       {report.average_latency_seconds:.3f}s")
     print(f"Reliability       {report.reliability_score:.1f}/100")
-
     failures = [r for r in report.runs if not r.success]
     if failures:
         print("\nFailure Analysis")
@@ -62,11 +61,7 @@ def _print_regression(regression) -> None:
     print("───────────────────────────")
     for change in regression.changes:
         marker = "REGRESSION" if change.regressed else "OK"
-        print(
-            f"[{marker}] {change.metric}: "
-            f"{change.baseline:.1f} → {change.current:.1f} "
-            f"({change.delta:+.1f})"
-        )
+        print(f"[{marker}] {change.metric}: {change.baseline:.1f} → {change.current:.1f} ({change.delta:+.1f})")
     print(f"New failures       {regression.new_failures}")
     print(f"Resolved failures  {regression.resolved_failures}")
     print(f"Allowed drop       {regression.threshold:.1f}")
@@ -80,12 +75,7 @@ def _print_history(records) -> None:
         return
     for record in records:
         version = f" v{record.version}" if record.version else ""
-        print(
-            f"#{record.id}  {record.created_at}  {record.agent}{version}  "
-            f"reliability={record.reliability_score:.1f}  "
-            f"success={record.task_success:.1f}%  "
-            f"runs={record.total_runs}  failed={record.failed_runs}"
-        )
+        print(f"#{record.id}  {record.created_at}  {record.agent}{version}  reliability={record.reliability_score:.1f}  success={record.task_success:.1f}%  runs={record.total_runs}  failed={record.failed_runs}")
 
 
 def main() -> None:
@@ -102,20 +92,25 @@ def main() -> None:
     history_parser = subparsers.add_parser("history", help="Manage stored evaluation history")
     history_parser.add_argument("--db", type=Path, default=Path(".agent-reliability/history.db"), help="SQLite database path")
     history_subparsers = history_parser.add_subparsers(dest="history_command", required=True)
-
     save_parser = history_subparsers.add_parser("save", help="Save a JSON evaluation report")
     save_parser.add_argument("report", type=Path, help="Evaluation JSON report")
     save_parser.add_argument("--agent", default="unknown", help="Agent name")
     save_parser.add_argument("--version", help="Agent version")
-
     list_parser = history_subparsers.add_parser("list", help="List stored evaluations")
     list_parser.add_argument("--limit", type=int, default=20, help="Maximum records to show")
-
     show_parser = history_subparsers.add_parser("show", help="Show a stored evaluation")
     show_parser.add_argument("id", type=int, help="Evaluation ID")
-
     delete_parser = history_subparsers.add_parser("delete", help="Delete a stored evaluation")
     delete_parser.add_argument("id", type=int, help="Evaluation ID")
+    compare_parser = history_subparsers.add_parser("compare", help="Compare two stored evaluations")
+    compare_parser.add_argument("baseline_id", type=int, help="Baseline evaluation ID")
+    compare_parser.add_argument("current_id", type=int, help="Current evaluation ID")
+    compare_parser.add_argument("--threshold", type=float, default=0.0, help="Allowed metric drop")
+
+    dashboard_parser = subparsers.add_parser("dashboard", help="Launch the local web dashboard")
+    dashboard_parser.add_argument("--db", type=Path, default=Path(".agent-reliability/history.db"), help="SQLite database path")
+    dashboard_parser.add_argument("--host", default="127.0.0.1", help="Bind host")
+    dashboard_parser.add_argument("--port", type=int, default=5000, help="Bind port")
 
     args = parser.parse_args()
 
@@ -135,6 +130,11 @@ def main() -> None:
                 raise SystemExit(1)
         return
 
+    if args.command == "dashboard":
+        from .dashboard import run_dashboard
+        run_dashboard(args.db, host=args.host, port=args.port)
+        return
+
     history = EvaluationHistory(args.db)
     if args.history_command == "save":
         report = json.loads(args.report.read_text(encoding="utf-8"))
@@ -147,6 +147,11 @@ def main() -> None:
     elif args.history_command == "delete":
         history.delete(args.id)
         print(f"Deleted evaluation #{args.id}")
+    elif args.history_command == "compare":
+        regression = compare_reports(history.get(args.baseline_id), history.get(args.current_id), threshold=args.threshold)
+        _print_regression(regression)
+        if not regression.passed:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":
