@@ -2,7 +2,7 @@
 
 Evaluate whether an AI agent actually works reliably — before putting it into production.
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, trace executions with OpenTelemetry, and detect regressions between agent versions.
+**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, trace executions with OpenTelemetry, store evaluation history, and detect regressions between agent versions.
 
 ## 30-second demo
 
@@ -38,6 +38,7 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **Latency** — average execution time
 - **OpenTelemetry traces** — optional execution spans and evaluation attributes
 - **Regression detection** — compare a new evaluation against a baseline
+- **Historical storage** — keep evaluation reports locally in SQLite
 - **Pass/fail gates** — fail CI when reliability drops beyond an allowed threshold
 - **Framework adapters** — LangChain, LangGraph, and generic MCP traces
 - **JSON export** — keep results for CI, regression testing, or your own tooling
@@ -55,6 +56,49 @@ Export a machine-readable report:
 ```bash
 agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 ```
+
+## Historical evaluation history
+
+v0.8 adds a lightweight SQLite history store. It requires no database server and keeps the toolkit local-first.
+
+Save a report:
+
+```bash
+agent-reliability history save report.json --agent my-agent --version 1.2.0
+```
+
+List recent evaluations:
+
+```bash
+agent-reliability history list
+```
+
+Inspect a stored report:
+
+```bash
+agent-reliability history show 1
+```
+
+Delete an evaluation:
+
+```bash
+agent-reliability history delete 1
+```
+
+The default database is `.agent-reliability/history.db`. Use `--db path/to/history.db` to choose another location.
+
+The Python API is also available:
+
+```python
+from agent_reliability import EvaluationHistory
+
+history = EvaluationHistory("history.db")
+evaluation_id = history.save(report, agent="my-agent", version="1.2.0")
+records = history.list()
+full_report = history.get(evaluation_id)
+```
+
+History stores summary metrics plus the original JSON report, providing a clean foundation for future dashboards and historical comparisons.
 
 ## LangChain adapter
 
@@ -118,45 +162,13 @@ agent = MCPTraceAdapter(run_mcp)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-The normal evaluation assertions are reused for MCP calls:
-
-```yaml
-agent: examples.mcp_agent:agent
-
-cases:
-  - id: order-status
-    input: "Where is order 1234?"
-    expected:
-      contains:
-        - "shipped"
-      tool_calls:
-        - name: get_order
-          arguments:
-            order_id: "1234"
-      tool_call_mode: exact
-```
-
-MCP-style records can also represent failed execution:
-
-```python
-{"name": "get_order", "arguments": {"order_id": "1234"}, "error": "timeout"}
-```
-
-That becomes a failed `ToolCall`, which the existing failure classifier reports as `TOOL_EXECUTION_ERROR`.
-
-For SDK-specific trace shapes, use `output_parser` and `calls_parser` rather than coupling the core package to a particular SDK release.
-
 ## OpenTelemetry integration
 
 v0.7 adds optional tracing without forcing an observability backend or an OpenTelemetry dependency on every user.
 
-Install the extra:
-
 ```bash
 pip install -e '.[otel]'
 ```
-
-Wrap an agent's `run()` method:
 
 ```python
 from agent_reliability import instrument_agent
@@ -165,24 +177,17 @@ agent = instrument_agent(my_agent, service_name="my-agent")
 result = agent.run("Where is order 1234?")
 ```
 
-For evaluation-aware instrumentation, use the low-level helpers:
+For evaluation-aware instrumentation:
 
 ```python
 from agent_reliability import record_evaluation, trace_agent_run
 
 with trace_agent_run(tracer, test_id="order-status", run_number=3) as span:
     result = agent.run("Where is order 1234?")
-    record_evaluation(
-        span,
-        success=True,
-        failure_count=0,
-        reliability_score=100.0,
-    )
+    record_evaluation(span, success=True, failure_count=0, reliability_score=100.0)
 ```
 
-The toolkit records namespaced attributes such as `agent_reliability.success`, `agent_reliability.failure_count`, `agent_reliability.reliability_score`, and `agent_reliability.latency_ms`. Failures are also recorded as span exceptions.
-
-OpenTelemetry is deliberately backend-neutral: export traces to the collector or tracing backend your application already uses. The toolkit does not require Jaeger, Grafana, Datadog, or another specific vendor.
+The toolkit records namespaced `agent_reliability.*` attributes and records exceptions on failed executions. Export traces through the collector or backend your application already uses.
 
 ## Regex evaluation
 
@@ -209,32 +214,13 @@ evaluator = BasicEvaluator(LLMJudgeEvaluator(MyJudge()))
 report = evaluate_cases(agent, cases, runs_per_test=10, evaluator=evaluator)
 ```
 
-```yaml
-expected:
-  judge:
-    criteria:
-      - "The response directly answers the user's question."
-      - "The response does not invent unsupported facts."
-    threshold: 0.80
-```
-
-No LLM dependency is required by the core package.
-
 ## Regression testing
-
-Save a known-good evaluation as a baseline, then compare future agent versions against it:
 
 ```bash
 agent-reliability eval examples/cases.yaml --runs 20 --json current.json --baseline baseline.json
 ```
 
-The command checks overall task success, consistency, reliability score, and per-test success rates. By default, any drop is a regression and the command exits with status `1`.
-
-Allow a small measurement change with `--threshold`:
-
-```bash
-agent-reliability eval examples/cases.yaml --runs 20 --baseline baseline.json --threshold 2
-```
+By default, any metric drop is a regression and the command exits with status `1`. Use `--threshold` to allow a small drop.
 
 ## Tool-call evaluation
 
@@ -252,14 +238,6 @@ The evaluator checks expected tool names, argument values, call order, missing c
 ## Failure analysis
 
 Failed runs are classified automatically so you can see *why* an agent failed, not just that it failed.
-
-```text
-Failure Analysis
-
-  order-status — run 3
-    [HIGH] TOOL_SELECTION_ERROR: tool call #1: expected 'get_order', got 'search_orders'
-    [HIGH] TOOL_ARGUMENT_ERROR: tool call #1 argument 'order_id': expected '1234', got '1243'
-```
 
 | Category | Meaning |
 |---|---|
@@ -284,53 +262,50 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 ## Roadmap
 
 ### v0.3 ✓
-
 - Structured output assertions
 - Tool-call correctness
 - Failure classification
 
 ### v0.4 ✓
-
 - Regression comparison
 - Thresholds and pass/fail gates
 
 ### v0.5 ✓
-
 - Regex evaluators
 - Provider-agnostic LLM-as-a-judge evaluator
 - Semantic evaluation with thresholds
 
 ### v0.5.1 ✓
-
 - Dedicated unreliable-agent demo
 - 30-second quick-start evaluation
 - CI regression quality gate
-- Improved developer experience and examples
 - LangChain adapter
 - LangGraph adapter
-- Framework-agnostic adapter design with no extra core dependencies
+- Framework-agnostic adapter design
 
 ### v0.6 ✓
-
 - Generic MCP-style tool-call normalization
-- MCP trace adapter built on the existing `ToolTrace` model
+- MCP trace adapter
 - MCP tool name, argument, result, and error normalization
-- MCP execution failure detection through existing failure classification
-- Deterministic adapter tests and runnable example
-- No MCP SDK dependency in the core package
+- MCP execution failure detection
+- No MCP SDK dependency in core
 
 ### v0.7 ✓
-
-- Optional OpenTelemetry tracing integration
+- Optional OpenTelemetry tracing
 - Agent execution spans
 - Evaluation result attributes and events
 - Exception recording
 - Backend-neutral instrumentation
-- No mandatory OpenTelemetry dependency in the core package
+
+### v0.8 ✓
+- Local SQLite evaluation history
+- Save/list/show/delete history commands
+- Python history API
+- Full report retention
+- Agent/version metadata
 
 ### Next
-
-- Historical evaluation database
+- Historical comparison UX
 - Web dashboard
 - Hosted evaluation platform
 
