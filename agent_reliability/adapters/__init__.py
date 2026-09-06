@@ -2,5 +2,11 @@
 
 from .langchain import LangChainAdapter
 from .langgraph import LangGraphAdapter
+from .mcp import MCPTraceAdapter, normalize_mcp_call
 
-__all__ = ["LangChainAdapter", "LangGraphAdapter"]
+__all__ = [
+    "LangChainAdapter",
+    "LangGraphAdapter",
+    "MCPTraceAdapter",
+    "normalize_mcp_call",
+]
