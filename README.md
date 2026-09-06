@@ -6,8 +6,6 @@ Evaluate whether an AI agent actually works reliably — before putting it into 
 
 ## 30-second demo
 
-Clone the repo, install it, and run the intentionally unreliable demo agent:
-
 ```bash
 git clone https://github.com/MrRex168/agent-reliability-toolkit.git
 cd agent-reliability-toolkit
@@ -18,28 +16,6 @@ agent-reliability eval examples/unreliable_cases.yaml --runs 20
 ```
 
 The demo agent fails intermittently on purpose. Repeated runs expose failures that a single successful demo would hide.
-
-Example:
-
-```text
-AI Agent Reliability Report
-───────────────────────────
-Tests             2
-Runs per test     20
-Total runs        40
-Successful        34
-Failed            6
-
-Task success      85.0%
-Consistency       0.0%
-Reliability       42.5/100
-
-Failure Analysis
-  refund-policy — run 5
-    [HIGH] OUTPUT_MISMATCH: missing expected text: '30 days'
-```
-
-Your own agent needs only a `run(prompt)` method. The toolkit does not require a specific agent framework or LLM provider.
 
 ## Why this exists
 
@@ -55,13 +31,14 @@ Test cases → Agent → Repeated runs → Assertions → Failure analysis → R
 - **Consistency** — does it keep passing across repeated runs?
 - **Structured output** — required keys and exact JSON objects
 - **Text output** — required phrases, regex patterns, and exact values
-- **Semantic quality** — optional LLM-as-a-judge scoring against explicit criteria
+- **Semantic quality** — optional provider-agnostic LLM-as-a-judge scoring
 - **Tool calls** — expected tools, arguments, call order, and failed executions
+- **MCP tool traces** — normalize MCP-style calls without forcing an MCP SDK dependency
 - **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
 - **Latency** — average execution time
 - **Regression detection** — compare a new evaluation against a baseline
-- **Pass/fail gates** — fail CI or scripts when reliability drops beyond an allowed threshold
-- **Framework adapters** — plug LangChain runnables or LangGraph graphs into the same evaluation engine
+- **Pass/fail gates** — fail CI when reliability drops beyond an allowed threshold
+- **Framework adapters** — LangChain, LangGraph, and generic MCP traces
 - **JSON export** — keep results for CI, regression testing, or your own tooling
 
 ## Quick start
@@ -80,7 +57,7 @@ agent-reliability eval examples/cases.yaml --runs 10 --json report.json
 
 ## LangChain adapter
 
-If your agent or runnable exposes LangChain's standard `invoke()` interface, wrap it without adding LangChain as a dependency of this toolkit. LangChain's current APIs use `invoke()` for synchronous execution. citeturn1search0turn1search7
+If your agent or runnable exposes `invoke()`, wrap it without adding LangChain as a dependency of this toolkit.
 
 ```python
 from agent_reliability import LangChainAdapter, evaluate_cases
@@ -89,18 +66,11 @@ agent = LangChainAdapter(my_langchain_agent)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-The adapter normalizes common string, message-like, and `{"output": ...}` results. For application-specific outputs, provide an `output_parser`:
-
-```python
-agent = LangChainAdapter(
-    my_langchain_agent,
-    output_parser=lambda result: result.content,
-)
-```
+Use `output_parser` for application-specific results.
 
 ## LangGraph adapter
 
-Compiled LangGraph workflows expose `invoke()` and return application-defined state. The adapter supplies a sensible messages-based input and lets you define how the final state becomes the value evaluated by the toolkit. citeturn1search1turn1search2
+Compiled LangGraph workflows can be evaluated through the same engine.
 
 ```python
 from agent_reliability import LangGraphAdapter, evaluate_cases
@@ -109,7 +79,7 @@ agent = LangGraphAdapter(my_graph)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-For a graph with custom state, define both input and output normalization:
+For custom graph state:
 
 ```python
 agent = LangGraphAdapter(
@@ -119,104 +89,38 @@ agent = LangGraphAdapter(
 )
 ```
 
-The adapters intentionally use a small duck-typed interface rather than importing either framework. This keeps the base package lightweight and lets you install framework versions independently.
+The adapters use a small duck-typed interface, keeping framework dependencies outside the core package.
 
-## Regex evaluation
+## MCP tool evaluation
 
-Use regex when an exact string is too strict but the output still needs to follow a predictable pattern:
+MCP support in v0.6 focuses on one practical problem: MCP clients and agents produce tool-call records, while the reliability engine already knows how to evaluate normalized tool traces.
 
-```yaml
-expected:
-  regex:
-    - "order \\d+ is shipped\\.?"
-```
-
-Patterns are matched case-insensitively and with multiline support. Invalid patterns are reported as evaluation failures instead of crashing the run.
-
-## LLM-as-a-judge evaluation
-
-Deterministic assertions are excellent for structure and exact behavior, but many agent tasks are semantic. The toolkit provides a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
+The toolkit therefore does **not** add an MCP SDK dependency. `MCPTraceAdapter` accepts dictionaries or objects with common MCP-style fields and converts them into the existing `ToolTrace` / `ToolCall` model.
 
 ```python
-from agent_reliability import BasicEvaluator, LLMJudgeEvaluator, evaluate_cases
+from agent_reliability import MCPTraceAdapter, evaluate_cases
 
-class MyJudge:
-    def judge(self, output, input_text, criteria):
-        # Call your preferred LLM provider here.
-        return 0.92, "The response directly answers the question."
 
-evaluator = BasicEvaluator(LLMJudgeEvaluator(MyJudge()))
-report = evaluate_cases(agent, cases, runs_per_test=10, evaluator=evaluator)
+def run_mcp(prompt):
+    return {
+        "output": "Order 1234 is shipped.",
+        "tool_calls": [
+            {
+                "name": "get_order",
+                "arguments": {"order_id": "1234"},
+                "result": {"status": "shipped"},
+            }
+        ],
+    }
+
+agent = MCPTraceAdapter(run_mcp)
+report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-The test case stays provider-neutral:
+The normal evaluation assertions are reused for MCP calls:
 
 ```yaml
-expected:
-  judge:
-    criteria:
-      - "The response directly answers the user's question."
-      - "The response does not invent unsupported facts."
-    threshold: 0.80
-```
-
-The judge returns a score from `0.0` to `1.0`. A score below the configured threshold fails the run. No API key or LLM dependency is required by the core package, which keeps local tests and CI deterministic unless you explicitly supply a live judge.
-
-## Regression testing
-
-Save a known-good evaluation as a baseline, then compare future agent versions against it:
-
-```bash
-agent-reliability eval examples/cases.yaml --runs 20 --json current.json --baseline baseline.json
-```
-
-The command checks overall task success, consistency, reliability score, and per-test success rates. By default, **any drop is a regression** and the command exits with status `1`.
-
-Allow a small measurement change with `--threshold`:
-
-```bash
-agent-reliability eval examples/cases.yaml --runs 20 --baseline baseline.json --threshold 2
-```
-
-This makes the toolkit usable as a lightweight quality gate before shipping an agent change.
-
-## Test cases
-
-Text evaluation:
-
-```yaml
-agent: examples.agent:agent
-
-cases:
-  - id: refund-policy
-    input: "What is the refund policy?"
-    expected:
-      contains:
-        - "30 days"
-        - "original payment method"
-```
-
-Structured-output evaluation:
-
-```yaml
-agent: examples.structured_agent:agent
-
-cases:
-  - id: order-status
-    input: "Where is order 1234?"
-    expected:
-      required_keys:
-        - answer
-        - category
-      json_equals:
-        answer: "Order 1234 is shipped."
-        category: "order"
-```
-
-Tool-call evaluation:
-
-```yaml
-agent: examples.tool_agent:agent
+agent: examples.mcp_agent:agent
 
 cases:
   - id: order-status
@@ -231,23 +135,80 @@ cases:
       tool_call_mode: exact
 ```
 
-## Agent adapter
-
-Your agent only needs a `run(prompt)` method. It can return text, a Python dictionary/list, or a `ToolTrace` containing the output and recorded tool calls.
+MCP-style records can also represent failed execution:
 
 ```python
-class MyAgent:
-    def run(self, prompt: str):
-        return my_agent_framework.invoke(prompt)
+{"name": "get_order", "arguments": {"order_id": "1234"}, "error": "timeout"}
 ```
 
-For tool evaluation, return a `ToolTrace` with normalized `ToolCall` records. See `examples/tool_agent.py` for a complete example.
+That becomes a failed `ToolCall`, which the existing failure classifier reports as `TOOL_EXECUTION_ERROR`.
 
-The CLI loads an adapter with `module:symbol` syntax:
+For SDK-specific trace shapes, use `output_parser` and `calls_parser` rather than coupling the core package to a particular SDK release.
+
+## Regex evaluation
 
 ```yaml
-agent: my_agent:agent
+expected:
+  regex:
+    - "order \\d+ is shipped\\.?"
 ```
+
+Patterns are matched case-insensitively and with multiline support. Invalid patterns are reported as evaluation failures instead of crashing the run.
+
+## LLM-as-a-judge evaluation
+
+The toolkit provides a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
+
+```python
+from agent_reliability import BasicEvaluator, LLMJudgeEvaluator, evaluate_cases
+
+class MyJudge:
+    def judge(self, output, input_text, criteria):
+        return 0.92, "The response directly answers the question."
+
+evaluator = BasicEvaluator(LLMJudgeEvaluator(MyJudge()))
+report = evaluate_cases(agent, cases, runs_per_test=10, evaluator=evaluator)
+```
+
+```yaml
+expected:
+  judge:
+    criteria:
+      - "The response directly answers the user's question."
+      - "The response does not invent unsupported facts."
+    threshold: 0.80
+```
+
+No LLM dependency is required by the core package.
+
+## Regression testing
+
+Save a known-good evaluation as a baseline, then compare future agent versions against it:
+
+```bash
+agent-reliability eval examples/cases.yaml --runs 20 --json current.json --baseline baseline.json
+```
+
+The command checks overall task success, consistency, reliability score, and per-test success rates. By default, any drop is a regression and the command exits with status `1`.
+
+Allow a small measurement change with `--threshold`:
+
+```bash
+agent-reliability eval examples/cases.yaml --runs 20 --baseline baseline.json --threshold 2
+```
+
+## Tool-call evaluation
+
+```yaml
+expected:
+  tool_calls:
+    - name: get_order
+      arguments:
+        order_id: "1234"
+  tool_call_mode: exact
+```
+
+The evaluator checks expected tool names, argument values, call order, missing calls, and failed executions.
 
 ## Failure analysis
 
@@ -260,8 +221,6 @@ Failure Analysis
     [HIGH] TOOL_SELECTION_ERROR: tool call #1: expected 'get_order', got 'search_orders'
     [HIGH] TOOL_ARGUMENT_ERROR: tool call #1 argument 'order_id': expected '1234', got '1243'
 ```
-
-The taxonomy is intentionally small and deterministic:
 
 | Category | Meaning |
 |---|---|
@@ -312,12 +271,20 @@ This is an engineering baseline, not a safety certification or guarantee of prod
 - LangGraph adapter
 - Framework-agnostic adapter design with no extra core dependencies
 
+### v0.6 ✓
+
+- Generic MCP-style tool-call normalization
+- MCP trace adapter built on the existing `ToolTrace` model
+- MCP tool name, argument, result, and error normalization
+- MCP execution failure detection through existing failure classification
+- Deterministic adapter tests and runnable example
+- No MCP SDK dependency in the core package
+
 ### Next
 
-- MCP tool evaluation
 - OpenTelemetry integration
-- Web dashboard
 - Historical evaluation database
+- Web dashboard
 - Hosted evaluation platform
 
 ## Philosophy
