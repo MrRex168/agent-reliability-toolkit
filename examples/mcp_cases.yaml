@@ -1,0 +1,13 @@
+agent: examples.mcp_agent:agent
+
+cases:
+  - id: order-status
+    input: "Where is order 1234?"
+    expected:
+      contains:
+        - "shipped"
+      tool_calls:
+        - name: get_order
+          arguments:
+            order_id: "1234"
+      tool_call_mode: exact
