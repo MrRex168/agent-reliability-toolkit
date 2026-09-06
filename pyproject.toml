@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-reliability-toolkit"
-version = "0.6.0"
+version = "0.7.0"
 description = "Open-source toolkit for testing, evaluating and benchmarking AI agent reliability."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,6 +14,7 @@ dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+otel = ["opentelemetry-api>=1.37.0", "opentelemetry-sdk>=1.37.0"]
 
 [project.scripts]
 agent-reliability = "agent_reliability.cli:main"
