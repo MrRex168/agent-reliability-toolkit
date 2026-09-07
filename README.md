@@ -1,10 +1,24 @@
 # AI Agent Reliability Toolkit
 
-Evaluate whether an AI agent actually works reliably — before putting it into production.
+**Evaluate whether an AI agent actually works reliably — before putting it into production.**
 
-**Open-source, local-first evaluation toolkit for AI agents.** Run the same task repeatedly, measure success and consistency, inspect tool usage, classify failures, evaluate semantic quality, trace executions with OpenTelemetry, store evaluation history, and detect regressions between agent versions.
+Open-source, local-first tooling for repeatedly testing agents, measuring reliability, inspecting tool usage, classifying failures, evaluating semantic quality, tracing executions, storing evaluation history, and catching regressions between versions.
+
+[![Tests](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml)
+
+## Why this exists
+
+A successful demo does not prove an agent is reliable.
+
+Agents can fail intermittently, choose the wrong tool, send incorrect arguments, return malformed output, or get worse after a code/model change. This toolkit makes those failures measurable and repeatable.
+
+```text
+Test cases → Agent → Repeated runs → Assertions → Failure analysis → Regression gate
+```
 
 ## 30-second demo
+
+Requires Python 3.10+.
 
 ```bash
 git clone https://github.com/MrRex168/agent-reliability-toolkit.git
@@ -15,79 +29,94 @@ pip install -e .
 agent-reliability eval examples/unreliable_cases.yaml --runs 20
 ```
 
-The demo agent fails intermittently on purpose. Repeated runs expose failures that a single successful demo would hide.
+The included demo agent is intentionally unreliable: some requests fail intermittently. Repeated evaluation exposes failures that a single successful demo would hide.
 
-## Why this exists
+You should see a report containing task success, consistency, latency, reliability, and categorized failures.
 
-An agent can pass a demo and still fail in production. A single successful run tells you almost nothing about reliability.
+### See the dashboard
 
-```text
-Test cases → Agent → Repeated runs → Assertions → Failure analysis → Regression check
+Install the optional dashboard dependency:
+
+```bash
+pip install -e '.[dashboard]'
+agent-reliability dashboard
 ```
+
+The local dashboard shows evaluation history, reliability trends, individual runs, failure categories, and baseline/current comparisons.
 
 ## What it checks
 
 - **Task success** — did the agent satisfy the expected outcome?
 - **Consistency** — does it keep passing across repeated runs?
-- **Structured output** — required keys and exact JSON objects
 - **Text output** — required phrases, regex patterns, and exact values
-- **Semantic quality** — optional provider-agnostic LLM-as-a-judge scoring
+- **Structured output** — required keys and exact JSON/object values
+- **Semantic quality** — provider-agnostic LLM-as-a-judge scoring
 - **Tool calls** — expected tools, arguments, call order, and failed executions
-- **MCP tool traces** — normalize MCP-style calls without forcing an MCP SDK dependency
-- **Failure classification** — output, structured-output, tool-selection, tool-argument, tool-execution, and agent errors
+- **MCP traces** — normalize MCP-style calls without forcing an MCP SDK dependency
+- **Failure classification** — actionable categories for output, tools, and agent errors
 - **Latency** — average execution time
-- **OpenTelemetry traces** — optional execution spans and evaluation attributes
+- **OpenTelemetry** — optional execution spans and evaluation attributes
 - **Regression detection** — compare a new evaluation against a baseline
-- **Historical storage** — keep evaluation reports locally in SQLite
-- **Pass/fail gates** — fail CI when reliability drops beyond an allowed threshold
+- **Evaluation history** — local SQLite storage with agent/version metadata
+- **CI quality gates** — fail CI when reliability drops beyond an allowed threshold
 - **Framework adapters** — LangChain, LangGraph, and generic MCP traces
-- **JSON export** — keep results for CI, regression testing, or your own tooling
+- **JSON export** — machine-readable reports for CI and custom tooling
 
 ## Quick start
 
-Requires Python 3.10+.
+Create an evaluation YAML file:
 
-```bash
-agent-reliability eval examples/cases.yaml --runs 10
+```yaml
+agent: examples.agent:agent
+cases:
+  - id: greeting
+    input: "Say hello"
+    expected:
+      contains: ["hello"]
 ```
 
-Export a machine-readable report:
+Run it repeatedly:
 
 ```bash
-agent-reliability eval examples/cases.yaml --runs 10 --json report.json
+agent-reliability eval cases.yaml --runs 10
 ```
 
-## Historical evaluation history
+Export a report:
 
-v0.8 adds a lightweight SQLite history store. It requires no database server and keeps the toolkit local-first.
+```bash
+agent-reliability eval cases.yaml --runs 10 --json report.json
+```
 
-Save a report:
+## Regression testing
+
+Compare a new evaluation with a known-good JSON baseline:
+
+```bash
+agent-reliability eval cases.yaml \
+  --runs 20 \
+  --json current.json \
+  --baseline baseline.json
+```
+
+By default, any metric drop is treated as a regression and the command exits with status `1`. Use `--threshold` when a small metric drop is acceptable.
+
+This makes the toolkit useful as a lightweight CI quality gate for agent changes.
+
+## Evaluation history
+
+Store reports locally in SQLite. No database server is required.
 
 ```bash
 agent-reliability history save report.json --agent my-agent --version 1.2.0
-```
-
-List recent evaluations:
-
-```bash
 agent-reliability history list
-```
-
-Inspect a stored report:
-
-```bash
 agent-reliability history show 1
-```
-
-Delete an evaluation:
-
-```bash
+agent-reliability history compare 1 2
 agent-reliability history delete 1
 ```
 
-The default database is `.agent-reliability/history.db`. Use `--db path/to/history.db` to choose another location.
+Default database: `.agent-reliability/history.db`.
 
-The Python API is also available:
+Python API:
 
 ```python
 from agent_reliability import EvaluationHistory
@@ -98,11 +127,11 @@ records = history.list()
 full_report = history.get(evaluation_id)
 ```
 
-History stores summary metrics plus the original JSON report, providing a clean foundation for future dashboards and historical comparisons.
+## Framework adapters
 
-## LangChain adapter
+### LangChain
 
-If your agent or runnable exposes `invoke()`, wrap it without adding LangChain as a dependency of this toolkit.
+If your agent or runnable exposes `invoke()`, wrap it without making LangChain a dependency of the toolkit:
 
 ```python
 from agent_reliability import LangChainAdapter, evaluate_cases
@@ -111,11 +140,9 @@ agent = LangChainAdapter(my_langchain_agent)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-Use `output_parser` for application-specific results.
+### LangGraph
 
-## LangGraph adapter
-
-Compiled LangGraph workflows can be evaluated through the same engine.
+Compiled LangGraph workflows can use the same evaluation engine:
 
 ```python
 from agent_reliability import LangGraphAdapter, evaluate_cases
@@ -124,70 +151,33 @@ agent = LangGraphAdapter(my_graph)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-For custom graph state:
+For custom graph state, provide `input_builder` and `output_parser`.
 
-```python
-agent = LangGraphAdapter(
-    my_graph,
-    input_builder=lambda prompt: {"question": prompt},
-    output_parser=lambda state: state["answer"],
-)
-```
+### MCP
 
-The adapters use a small duck-typed interface, keeping framework dependencies outside the core package.
-
-## MCP tool evaluation
-
-MCP support in v0.6 focuses on one practical problem: MCP clients and agents produce tool-call records, while the reliability engine already knows how to evaluate normalized tool traces.
-
-The toolkit therefore does **not** add an MCP SDK dependency. `MCPTraceAdapter` accepts dictionaries or objects with common MCP-style fields and converts them into the existing `ToolTrace` / `ToolCall` model.
+`MCPTraceAdapter` converts common MCP-style tool-call records into the toolkit's normalized `ToolTrace` / `ToolCall` model. The core package does not require an MCP SDK.
 
 ```python
 from agent_reliability import MCPTraceAdapter, evaluate_cases
-
-
-def run_mcp(prompt):
-    return {
-        "output": "Order 1234 is shipped.",
-        "tool_calls": [
-            {
-                "name": "get_order",
-                "arguments": {"order_id": "1234"},
-                "result": {"status": "shipped"},
-            }
-        ],
-    }
 
 agent = MCPTraceAdapter(run_mcp)
 report = evaluate_cases(agent, cases, runs_per_test=20)
 ```
 
-## OpenTelemetry integration
+## Tool-call evaluation
 
-v0.7 adds optional tracing without forcing an observability backend or an OpenTelemetry dependency on every user.
+Define expected calls in YAML:
 
-```bash
-pip install -e '.[otel]'
+```yaml
+expected:
+  tool_calls:
+    - name: get_order
+      arguments:
+        order_id: "1234"
+  tool_call_mode: exact
 ```
 
-```python
-from agent_reliability import instrument_agent
-
-agent = instrument_agent(my_agent, service_name="my-agent")
-result = agent.run("Where is order 1234?")
-```
-
-For evaluation-aware instrumentation:
-
-```python
-from agent_reliability import record_evaluation, trace_agent_run
-
-with trace_agent_run(tracer, test_id="order-status", run_number=3) as span:
-    result = agent.run("Where is order 1234?")
-    record_evaluation(span, success=True, failure_count=0, reliability_score=100.0)
-```
-
-The toolkit records namespaced `agent_reliability.*` attributes and records exceptions on failed executions. Export traces through the collector or backend your application already uses.
+The evaluator can detect wrong tools, missing calls, unexpected arguments, call-order problems, and failed tool executions.
 
 ## Regex evaluation
 
@@ -197,11 +187,11 @@ expected:
     - "order \\d+ is shipped\\.?"
 ```
 
-Patterns are matched case-insensitively and with multiline support. Invalid patterns are reported as evaluation failures instead of crashing the run.
+Patterns are matched case-insensitively with multiline support. Invalid patterns become evaluation failures rather than crashing the run.
 
-## LLM-as-a-judge evaluation
+## LLM-as-a-judge
 
-The toolkit provides a provider-agnostic judge interface: you bring the model/provider, while the toolkit handles criteria, thresholds, repeated evaluation, and failure reporting.
+Bring your own model/provider. The toolkit handles criteria, thresholds, repeated evaluation, and failure reporting without hard-coding an LLM vendor.
 
 ```python
 from agent_reliability import BasicEvaluator, LLMJudgeEvaluator, evaluate_cases
@@ -214,34 +204,30 @@ evaluator = BasicEvaluator(LLMJudgeEvaluator(MyJudge()))
 report = evaluate_cases(agent, cases, runs_per_test=10, evaluator=evaluator)
 ```
 
-## Regression testing
+## OpenTelemetry
+
+Install the optional integration:
 
 ```bash
-agent-reliability eval examples/cases.yaml --runs 20 --json current.json --baseline baseline.json
+pip install -e '.[otel]'
 ```
 
-By default, any metric drop is a regression and the command exits with status `1`. Use `--threshold` to allow a small drop.
+```python
+from agent_reliability import instrument_agent
 
-## Tool-call evaluation
-
-```yaml
-expected:
-  tool_calls:
-    - name: get_order
-      arguments:
-        order_id: "1234"
-  tool_call_mode: exact
+agent = instrument_agent(my_agent, service_name="my-agent")
+result = agent.run("Where is order 1234?")
 ```
 
-The evaluator checks expected tool names, argument values, call order, missing calls, and failed executions.
+The toolkit stays backend-neutral and records namespaced `agent_reliability.*` attributes. Use your existing OpenTelemetry collector/backend for export.
 
 ## Failure analysis
 
-Failed runs are classified automatically so you can see *why* an agent failed, not just that it failed.
+Failures are classified automatically so you can see *why* an agent failed, not only that it failed.
 
 | Category | Meaning |
 |---|---|
-| `AGENT_ERROR` | The agent itself raised an exception |
+| `AGENT_ERROR` | The agent raised an exception |
 | `OUTPUT_MISMATCH` | Text or exact output did not match |
 | `STRUCTURED_OUTPUT_ERROR` | JSON/object structure did not match |
 | `TOOL_SELECTION_ERROR` | The wrong or missing tool was selected |
@@ -259,64 +245,85 @@ The baseline score is intentionally transparent:
 
 This is an engineering baseline, not a safety certification or guarantee of production readiness.
 
+## Architecture
+
+```text
+                 ┌──────────────────┐
+                 │    Your Agent    │
+                 └────────┬─────────┘
+                          │
+                 ┌────────▼─────────┐
+                 │ Framework / MCP  │
+                 │    Adapters      │
+                 └────────┬─────────┘
+                          │
+                 ┌────────▼─────────┐
+                 │ Repeated Tests   │
+                 │ + Evaluators     │
+                 └────────┬─────────┘
+                          │
+              ┌───────────▼───────────┐
+              │ Failure Classification │
+              └───────────┬───────────┘
+                          │
+          ┌───────────────▼────────────────┐
+          │ Reports / History / Dashboard │
+          └───────────────┬────────────────┘
+                          │
+                 ┌────────▼─────────┐
+                 │ Regression Gate  │
+                 └──────────────────┘
+```
+
+## Design principles
+
+- **Local-first** — no cloud account required.
+- **Dependency-minimal** — integrations are optional.
+- **Provider-agnostic** — bring your own LLM, framework, and observability backend.
+- **Actionable failures** — explain what went wrong.
+- **Repeatability** — reliability requires repeated execution, not one demo run.
+- **CI-friendly** — JSON reports and non-zero regression exits fit existing pipelines.
+
 ## Roadmap
 
-### v0.3 ✓
-- Structured output assertions
-- Tool-call correctness
+### v1.0 ✓ — Open Source Launch Release
+
+- Repeated agent evaluation
+- Structured, regex, semantic, and tool-call evaluation
+- MCP trace support
 - Failure classification
+- Regression testing and CI gates
+- OpenTelemetry integration
+- SQLite evaluation history
+- Historical comparison
+- Local web dashboard
+- LangChain and LangGraph adapters
+- Deterministic unreliable-agent demo
+- Developer documentation and contribution workflow
 
-### v0.4 ✓
-- Regression comparison
-- Thresholds and pass/fail gates
+### Next — Validation
 
-### v0.5 ✓
-- Regex evaluators
-- Provider-agnostic LLM-as-a-judge evaluator
-- Semantic evaluation with thresholds
+- Gather developer feedback and real-world evaluation cases
+- Measure GitHub stars, installs, forks, and repeat usage
+- Identify the most valuable workflows
+- Prioritize the smallest high-demand hosted feature
 
-### v0.5.1 ✓
-- Dedicated unreliable-agent demo
-- 30-second quick-start evaluation
-- CI regression quality gate
-- LangChain adapter
-- LangGraph adapter
-- Framework-agnostic adapter design
+### Future — Hosted platform
 
-### v0.6 ✓
-- Generic MCP-style tool-call normalization
-- MCP trace adapter
-- MCP tool name, argument, result, and error normalization
-- MCP execution failure detection
-- No MCP SDK dependency in core
+- Hosted evaluation workspace
+- Team/project management
+- Cloud evaluation history
+- Automated agent monitoring
+- Usage-based and team plans
 
-### v0.7 ✓
-- Optional OpenTelemetry tracing
-- Agent execution spans
-- Evaluation result attributes and events
-- Exception recording
-- Backend-neutral instrumentation
+The hosted roadmap will be driven by open-source usage rather than built speculatively.
 
-### v0.8 ✓
-- Local SQLite evaluation history
-- Save/list/show/delete history commands
-- Python history API
-- Full report retention
-- Agent/version metadata
+## Contributing
 
-### Next
-- Historical comparison UX
-- Web dashboard
-- Hosted evaluation platform
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and design guidelines.
 
-## Philosophy
-
-**Build → Test → Observe → Improve → Productize**
-
-The goal is not another observability platform. The goal is a small tool that answers one question quickly:
-
-> **Can I trust this agent to perform this task repeatedly — and did the latest version get better or worse?**
+Bug reports and feature requests can be submitted through the GitHub issue templates.
 
 ## License
 
-MIT
+MIT License. See `LICENSE`.
