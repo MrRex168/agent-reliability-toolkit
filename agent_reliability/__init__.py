@@ -21,4 +21,4 @@ __all__ = [
     "create_app", "run_dashboard",
     "classify_failure", "classify_failures", "evaluate_cases", "evaluate_tool_calls",
 ]
-__version__ = "0.9.0"
+__version__ = "1.0.0"
