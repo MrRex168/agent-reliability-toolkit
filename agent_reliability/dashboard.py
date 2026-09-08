@@ -23,7 +23,7 @@ def _flask():
 
 STYLE = """
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f6f7f9;color:#17202a}
-.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:240px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:280px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
 """
 
 BASE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Agent Reliability Dashboard</title><style>{{style}}</style></head><body><main class='container'>{{body}}</main></body></html>"""
@@ -33,17 +33,20 @@ def _page(body: str) -> str:
     return BASE.replace("{{style}}", STYLE).replace("{{body}}", body)
 
 
-def _trend_chart(records: list[Any], width: int = 900, height: int = 220) -> str:
+def _trend_chart(records: list[Any], width: int = 900, height: int = 260) -> str:
     if not records:
         return ""
     ordered = list(reversed(records))
-    left, right, top, bottom = 48.0, 24.0, 24.0, 42.0
+    left, right, top, bottom = 76.0, 28.0, 30.0, 64.0
     plot_width = width - left - right
     plot_height = height - top - bottom
+    data_left = left + 28.0
+    data_right = width - right - 28.0
+    data_width = data_right - data_left
     if len(ordered) == 1:
-        x_values = [left + plot_width / 2]
+        x_values = [data_left + data_width / 2]
     else:
-        x_values = [left + i * plot_width / (len(ordered) - 1) for i in range(len(ordered))]
+        x_values = [data_left + i * data_width / (len(ordered) - 1) for i in range(len(ordered))]
 
     def y_for(score: float) -> float:
         score = max(0.0, min(100.0, score))
@@ -52,19 +55,23 @@ def _trend_chart(records: list[Any], width: int = 900, height: int = 220) -> str
     point_data = [(x, y_for(float(record.reliability_score)), record) for x, record in zip(x_values, ordered)]
     points = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in point_data)
     guides = "".join(
-        f"<line x1='{left:.1f}' y1='{y_for(value):.1f}' x2='{width-right:.1f}' y2='{y_for(value):.1f}' stroke='#e7eaee' stroke-width='1'/>"
-        f"<text x='{left-10:.1f}' y='{y_for(value)+4:.1f}' text-anchor='end' font-size='11' fill='#68737d'>{value}</text>"
+        f"<line x1='{left:.1f}' y1='{y_for(value):.1f}' x2='{width-right:.1f}' y2='{y_for(value):.1f}' stroke='#e2e7ec' stroke-width='1'/>"
+        f"<text x='{left-14:.1f}' y='{y_for(value)+4:.1f}' text-anchor='end' font-size='11' fill='#68737d'>{value}</text>"
         for value in (100, 75, 50, 25, 0)
     )
     markers = "".join(
-        f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4' fill='#17202a'><title>{escape(record.version or f'Evaluation #{record.id}')} — {record.reliability_score:.1f}</title></circle>"
-        f"<text x='{x:.1f}' y='{max(y-10, 12):.1f}' text-anchor='middle' font-size='11' font-weight='700' fill='#17202a'>{record.reliability_score:.1f}</text>"
-        f"<text x='{x:.1f}' y='{height-12:.1f}' text-anchor='middle' font-size='11' fill='#68737d'>{escape(record.version or f'#{record.id}')}</text>"
+        f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4.5' fill='#17202a'><title>{escape(record.version or f'Evaluation #{record.id}')} — {record.reliability_score:.1f}</title></circle>"
+        f"<text x='{x:.1f}' y='{max(y-14, 14):.1f}' text-anchor='middle' font-size='11' font-weight='700' fill='#17202a'>{record.reliability_score:.1f}</text>"
+        f"<text x='{x:.1f}' y='{height-34:.1f}' text-anchor='middle' font-size='11' fill='#68737d'>{escape(record.version or f'#{record.id}')}</text>"
         for x, y, record in point_data
+    )
+    axes = (
+        f"<text x='18' y='{top + plot_height / 2:.1f}' text-anchor='middle' font-size='11' font-weight='600' fill='#68737d' transform='rotate(-90 18 {top + plot_height / 2:.1f})'>Reliability score</text>"
+        f"<text x='{left + plot_width / 2:.1f}' y='{height-8:.1f}' text-anchor='middle' font-size='11' font-weight='600' fill='#68737d'>Version</text>"
     )
     return (
         f"<svg viewBox='0 0 {width} {height}' role='img' aria-label='Reliability score trend from 0 to 100'>"
-        f"<title>Reliability score trend</title>{guides}"
+        f"<title>Reliability score trend</title>{guides}{axes}"
         f"<polyline fill='none' stroke='#17202a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round' points='{points}'/>"
         f"{markers}</svg>"
     )
