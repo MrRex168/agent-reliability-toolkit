@@ -6,6 +6,8 @@ Open-source, local-first tooling for repeatedly testing agents, measuring reliab
 
 [![Tests](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml)
 
+![AI Agent Reliability Toolkit dashboard](docs/images/dashboard.png)
+
 ## Why this exists
 
 A successful demo does not prove an agent is reliable.
