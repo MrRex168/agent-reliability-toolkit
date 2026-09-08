@@ -80,7 +80,7 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
             f"<td>{r.consistency:.1f}%</td><td>{r.failed_runs}</td></tr>" for r in records
         )
         if latest:
-            cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Evaluations<div class='metric'>{len(records)}</div></div></div>"
+            cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div></div></div>"
         else:
             cards = "<div class='card'><h2>No evaluations yet</h2><p class='muted'>Save an evaluation JSON report to start building history.</p><code>agent-reliability history save report.json --agent my-agent --version 1.0.0</code></div>"
         chart = f"<div class='chart'><h2>Reliability trend</h2><svg viewBox='0 0 900 170' preserveAspectRatio='none'><polyline fill='none' stroke='currentColor' stroke-width='3' points='{points}'/></svg></div>" if records else ""
