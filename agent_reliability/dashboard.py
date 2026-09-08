@@ -23,7 +23,7 @@ def _flask():
 
 STYLE = """
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f6f7f9;color:#17202a}
-.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.metric-change{margin-top:6px;font-size:13px;font-weight:600;color:#68737d}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:280px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.metric-change{margin-top:6px;font-size:13px;font-weight:600;color:#68737d}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:280px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.failure-stat{background:#f8f9fa;border:1px solid #edf0f2;border-radius:10px;padding:14px}.failure-label{font-size:12px;color:#68737d}.failure-value{margin-top:5px;font-size:18px;font-weight:700;word-break:break-word}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.failure-summary{grid-template-columns:1fr}.table{font-size:13px}}
 """
 
 BASE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Agent Reliability Dashboard</title><style>{{style}}</style></head><body><main class='container'>{{body}}</main></body></html>"""
@@ -86,16 +86,20 @@ def _failure_rows(report: dict[str, Any]) -> list[tuple[str, str, str]]:
     return rows
 
 
-def _failure_summary(report: dict[str, Any]) -> str:
+def _failure_summary(report: dict[str, Any], failed_runs: int) -> str:
     failures = _failure_rows(report)
     counts = Counter(category for category, _, _ in failures)
     if not counts:
         return "<p class='muted'>No classified failure diagnostics in the latest evaluation.</p>"
-    items = "".join(
-        f"<div class='failure-summary'><span class='pill'>{escape(category)}</span><span class='failure-count'>{count} diagnostic{'s' if count != 1 else ''}</span></div>"
-        for category, count in counts.most_common()
+    primary_category, primary_count = counts.most_common(1)[0]
+    return (
+        "<div class='failure-summary'>"
+        f"<div class='failure-stat'><div class='failure-label'>Primary diagnostic</div><div class='failure-value'>{escape(primary_category)}</div></div>"
+        f"<div class='failure-stat'><div class='failure-label'>Diagnostics</div><div class='failure-value'>{len(failures)}</div></div>"
+        f"<div class='failure-stat'><div class='failure-label'>Failed runs</div><div class='failure-value'>{failed_runs}</div></div>"
+        "</div>"
+        f"<p class='muted'>{primary_count} of {len(failures)} diagnostics are {escape(primary_category)}. One failed run can produce multiple assertion-level diagnostics.</p>"
     )
-    return items
 
 
 def _history_change(records: list[Any], index: int) -> tuple[str, str]:
@@ -165,7 +169,7 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
                 "</div>"
             )
             latest_report = history.get(latest.id)
-            failure_analysis = f"<div class='card'><h2>Failure analysis</h2><p class='muted'>Latest evaluation · {escape(latest.agent)}{(' v' + escape(latest.version)) if latest.version else ''}</p>{_failure_summary(latest_report)}<p class='muted'>Counts are assertion-level diagnostics; one failed run can produce multiple diagnostics.</p></div>"
+            failure_analysis = f"<div class='card'><h2>Failure analysis</h2><p class='muted'>Latest evaluation · {escape(latest.agent)}{(' v' + escape(latest.version)) if latest.version else ''}</p>{_failure_summary(latest_report, latest.failed_runs)}</div>"
         else:
             cards = "<div class='card'><h2>No evaluations yet</h2><p class='muted'>Save an evaluation JSON report to start building history.</p><code>agent-reliability history save report.json --agent my-agent --version 1.0.0</code></div>"
             failure_analysis = ""
