@@ -23,7 +23,7 @@ def _flask():
 
 STYLE = """
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f6f7f9;color:#17202a}
-.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:240px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:240px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
 """
 
 BASE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Agent Reliability Dashboard</title><style>{{style}}</style></head><body><main class='container'>{{body}}</main></body></html>"""
@@ -91,6 +91,19 @@ def _failure_summary(report: dict[str, Any]) -> str:
     return items
 
 
+def _history_change(records: list[Any], index: int) -> tuple[str, str]:
+    current = records[index]
+    previous = next((r for r in records[index + 1:] if r.agent == current.agent), None)
+    if previous is None:
+        return "Baseline", "—"
+    delta = float(current.reliability_score) - float(previous.reliability_score)
+    if delta > 0:
+        return "Improved", f"+{delta:.1f}"
+    if delta < 0:
+        return "Lower", f"{delta:.1f}"
+    return "Unchanged", "0.0"
+
+
 def _record(history: EvaluationHistory, evaluation_id: int):
     for record in history.list(limit=1000):
         if record.id == evaluation_id:
@@ -107,12 +120,17 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
     def index():
         records = history.list(limit=50)
         latest = records[0] if records else None
-        rows = "".join(
-            f"<tr><td><a href='/evaluation/{r.id}'>#{r.id}</a></td><td>{escape(r.created_at)}</td>"
-            f"<td>{escape(r.agent)}{(' v' + escape(r.version)) if r.version else ''}</td>"
-            f"<td>{r.reliability_score:.1f}</td><td>{r.task_success:.1f}%</td>"
-            f"<td>{r.consistency:.1f}%</td><td>{r.failed_runs}</td></tr>" for r in records
-        )
+        row_parts = []
+        for index, record in enumerate(records):
+            status, delta = _history_change(records, index)
+            row_parts.append(
+                f"<tr><td><a href='/evaluation/{record.id}'>#{record.id}</a></td>"
+                f"<td>{escape(record.version or '—')}</td><td>{escape(record.agent)}</td>"
+                f"<td>{record.reliability_score:.1f}</td><td class='delta'>{delta}</td>"
+                f"<td>{record.task_success:.1f}%</td><td>{record.failed_runs} / {record.total_runs}</td>"
+                f"<td><span class='status'>{status}</span></td></tr>"
+            )
+        rows = "".join(row_parts)
         if latest:
             cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div></div></div>"
             latest_report = history.get(latest.id)
@@ -121,7 +139,7 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
             cards = "<div class='card'><h2>No evaluations yet</h2><p class='muted'>Save an evaluation JSON report to start building history.</p><code>agent-reliability history save report.json --agent my-agent --version 1.0.0</code></div>"
             failure_analysis = ""
         chart = f"<div class='chart'><h2>Reliability trend</h2><p class='muted'>Reliability score by saved evaluation (0–100).</p>{_trend_chart(records)}</div>" if records else ""
-        table = f"<table class='table'><thead><tr><th>ID</th><th>Date</th><th>Agent</th><th>Reliability</th><th>Task success</th><th>Consistency</th><th>Failed</th></tr></thead><tbody>{rows}</tbody></table>" if records else ""
+        table = f"<table class='table'><thead><tr><th>Evaluation</th><th>Version</th><th>Agent</th><th>Reliability</th><th>Δ vs prior</th><th>Task success</th><th>Failed runs</th><th>Status</th></tr></thead><tbody>{rows}</tbody></table>" if records else ""
         body = f"<div class='nav'><h1>AI Agent Reliability</h1><p class='muted'>Evaluate, track and compare AI agent reliability over time.</p></div>{cards}<br>{chart}<br>{failure_analysis}<br>{table}"
         return render_template_string(_page(body))
 
