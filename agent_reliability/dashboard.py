@@ -83,9 +83,9 @@ def _failure_summary(report: dict[str, Any]) -> str:
     failures = _failure_rows(report)
     counts = Counter(category for category, _, _ in failures)
     if not counts:
-        return "<p class='muted'>No classified failures in the latest evaluation.</p>"
+        return "<p class='muted'>No classified failure diagnostics in the latest evaluation.</p>"
     items = "".join(
-        f"<div class='failure-summary'><span class='pill'>{escape(category)}</span><span class='failure-count'>{count} failure{'s' if count != 1 else ''}</span></div>"
+        f"<div class='failure-summary'><span class='pill'>{escape(category)}</span><span class='failure-count'>{count} diagnostic{'s' if count != 1 else ''}</span></div>"
         for category, count in counts.most_common()
     )
     return items
@@ -134,7 +134,7 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
         if latest:
             cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div></div></div>"
             latest_report = history.get(latest.id)
-            failure_analysis = f"<div class='card'><h2>Failure analysis</h2><p class='muted'>Latest evaluation · {escape(latest.agent)}{(' v' + escape(latest.version)) if latest.version else ''}</p>{_failure_summary(latest_report)}</div>"
+            failure_analysis = f"<div class='card'><h2>Failure analysis</h2><p class='muted'>Latest evaluation · {escape(latest.agent)}{(' v' + escape(latest.version)) if latest.version else ''}</p>{_failure_summary(latest_report)}<p class='muted'>Counts are assertion-level diagnostics; one failed run can produce multiple diagnostics.</p></div>"
         else:
             cards = "<div class='card'><h2>No evaluations yet</h2><p class='muted'>Save an evaluation JSON report to start building history.</p><code>agent-reliability history save report.json --agent my-agent --version 1.0.0</code></div>"
             failure_analysis = ""
