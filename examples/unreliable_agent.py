@@ -10,7 +10,7 @@ class UnreliableAgent:
     def run(self, prompt: str) -> str:
         self.calls += 1
         if "refund" in prompt.lower():
-            if self.calls % 5 == 0:
+            if self.calls % 10 == 0:
                 return "I can help with your request."
             return "Refunds are available within 30 days to the original payment method."
 
