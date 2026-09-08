@@ -23,7 +23,7 @@ def _flask():
 
 STYLE = """
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f6f7f9;color:#17202a}
-.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:280px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.metric-change{margin-top:6px;font-size:13px;font-weight:600;color:#68737d}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:280px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.failure-summary{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}.failure-count{font-weight:700}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.status{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px;font-weight:600}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
 """
 
 BASE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Agent Reliability Dashboard</title><style>{{style}}</style></head><body><main class='container'>{{body}}</main></body></html>"""
@@ -111,6 +111,18 @@ def _history_change(records: list[Any], index: int) -> tuple[str, str]:
     return "Unchanged", "0.0"
 
 
+def _metric_change(current: float, previous: float | None, suffix: str = "", inverse: bool = False) -> str:
+    if previous is None:
+        return "Baseline"
+    delta = current - previous
+    if abs(delta) < 0.05:
+        return "No change"
+    improved = delta < 0 if inverse else delta > 0
+    direction = "▲" if improved else "▼"
+    value = abs(delta)
+    return f"{direction} {value:.1f}{suffix} vs prior"
+
+
 def _record(history: EvaluationHistory, evaluation_id: int):
     for record in history.list(limit=1000):
         if record.id == evaluation_id:
@@ -139,7 +151,19 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
             )
         rows = "".join(row_parts)
         if latest:
-            cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div></div></div>"
+            previous = next((r for r in records[1:] if r.agent == latest.agent), None)
+            reliability_change = _metric_change(latest.reliability_score, previous.reliability_score if previous else None)
+            task_success_change = _metric_change(latest.task_success, previous.task_success if previous else None, "%")
+            consistency_change = _metric_change(latest.consistency, previous.consistency if previous else None, "%")
+            failed_change = _metric_change(float(latest.failed_runs), float(previous.failed_runs) if previous else None, inverse=True)
+            cards = (
+                "<div class='grid'>"
+                f"<div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div><div class='metric-change'>{reliability_change}</div></div>"
+                f"<div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div><div class='metric-change'>{task_success_change}</div></div>"
+                f"<div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div><div class='metric-change'>{consistency_change}</div></div>"
+                f"<div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div><div class='metric-change'>{failed_change}</div></div>"
+                "</div>"
+            )
             latest_report = history.get(latest.id)
             failure_analysis = f"<div class='card'><h2>Failure analysis</h2><p class='muted'>Latest evaluation · {escape(latest.agent)}{(' v' + escape(latest.version)) if latest.version else ''}</p>{_failure_summary(latest_report)}<p class='muted'>Counts are assertion-level diagnostics; one failed run can produce multiple diagnostics.</p></div>"
         else:
