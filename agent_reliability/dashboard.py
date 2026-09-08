@@ -23,7 +23,7 @@ def _flask():
 
 STYLE = """
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;background:#f6f7f9;color:#17202a}
-.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:190px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
+.container{max-width:1100px;margin:0 auto;padding:32px 20px}.muted{color:#68737d}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px;box-shadow:0 1px 2px #00000008}.metric{font-size:28px;font-weight:700;margin-top:6px}.table{width:100%;border-collapse:collapse;background:white;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden}.table th,.table td{padding:12px;border-bottom:1px solid #edf0f2;text-align:left}.table th{font-size:13px;color:#68737d}.good{font-weight:700}.bad{font-weight:700}.nav{margin-bottom:24px}.nav a{color:#1769e0;text-decoration:none}.chart{background:white;border:1px solid #e2e6ea;border-radius:12px;padding:18px}.chart svg{width:100%;height:240px}.failure{padding:10px 12px;border-left:3px solid #68737d;background:#f8f9fa;margin:7px 0}.pill{display:inline-block;padding:3px 8px;border-radius:99px;background:#eef1f4;font-size:12px}.compare{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.delta{font-weight:700}@media(max-width:800px){.grid,.compare{grid-template-columns:1fr 1fr}.table{font-size:13px}}
 """
 
 BASE = """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Agent Reliability Dashboard</title><style>{{style}}</style></head><body><main class='container'>{{body}}</main></body></html>"""
@@ -33,18 +33,41 @@ def _page(body: str) -> str:
     return BASE.replace("{{style}}", STYLE).replace("{{body}}", body)
 
 
-def _svg_points(records: list[Any], width: int = 900, height: int = 170) -> str:
+def _trend_chart(records: list[Any], width: int = 900, height: int = 220) -> str:
     if not records:
         return ""
-    values = [float(r.reliability_score) for r in reversed(records)]
-    if len(values) == 1:
-        x_values = [width / 2]
+    ordered = list(reversed(records))
+    left, right, top, bottom = 48.0, 24.0, 24.0, 42.0
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+    if len(ordered) == 1:
+        x_values = [left + plot_width / 2]
     else:
-        x_values = [i * width / (len(values) - 1) for i in range(len(values))]
-    low, high = min(values), max(values)
-    span = max(high - low, 1.0)
-    y_values = [height - ((v - low) / span) * (height - 20) - 10 for v in values]
-    return " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(x_values, y_values))
+        x_values = [left + i * plot_width / (len(ordered) - 1) for i in range(len(ordered))]
+
+    def y_for(score: float) -> float:
+        score = max(0.0, min(100.0, score))
+        return top + (100.0 - score) / 100.0 * plot_height
+
+    point_data = [(x, y_for(float(record.reliability_score)), record) for x, record in zip(x_values, ordered)]
+    points = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in point_data)
+    guides = "".join(
+        f"<line x1='{left:.1f}' y1='{y_for(value):.1f}' x2='{width-right:.1f}' y2='{y_for(value):.1f}' stroke='#e7eaee' stroke-width='1'/>"
+        f"<text x='{left-10:.1f}' y='{y_for(value)+4:.1f}' text-anchor='end' font-size='11' fill='#68737d'>{value}</text>"
+        for value in (100, 75, 50, 25, 0)
+    )
+    markers = "".join(
+        f"<circle cx='{x:.1f}' cy='{y:.1f}' r='4' fill='#17202a'><title>{escape(record.version or f'Evaluation #{record.id}')} — {record.reliability_score:.1f}</title></circle>"
+        f"<text x='{x:.1f}' y='{max(y-10, 12):.1f}' text-anchor='middle' font-size='11' font-weight='700' fill='#17202a'>{record.reliability_score:.1f}</text>"
+        f"<text x='{x:.1f}' y='{height-12:.1f}' text-anchor='middle' font-size='11' fill='#68737d'>{escape(record.version or f'#{record.id}')}</text>"
+        for x, y, record in point_data
+    )
+    return (
+        f"<svg viewBox='0 0 {width} {height}' role='img' aria-label='Reliability score trend from 0 to 100'>"
+        f"<title>Reliability score trend</title>{guides}"
+        f"<polyline fill='none' stroke='#17202a' stroke-width='3' stroke-linejoin='round' stroke-linecap='round' points='{points}'/>"
+        f"{markers}</svg>"
+    )
 
 
 def _failure_rows(report: dict[str, Any]) -> list[tuple[str, str, str]]:
@@ -72,7 +95,6 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
     def index():
         records = history.list(limit=50)
         latest = records[0] if records else None
-        points = _svg_points(records)
         rows = "".join(
             f"<tr><td><a href='/evaluation/{r.id}'>#{r.id}</a></td><td>{escape(r.created_at)}</td>"
             f"<td>{escape(r.agent)}{(' v' + escape(r.version)) if r.version else ''}</td>"
@@ -83,7 +105,7 @@ def create_app(db_path: str | Path = ".agent-reliability/history.db"):
             cards = f"<div class='grid'><div class='card'>Latest reliability<div class='metric'>{latest.reliability_score:.1f}</div></div><div class='card'>Task success<div class='metric'>{latest.task_success:.1f}%</div></div><div class='card'>Consistency<div class='metric'>{latest.consistency:.1f}%</div></div><div class='card'>Failed runs<div class='metric'>{latest.failed_runs} / {latest.total_runs}</div></div></div>"
         else:
             cards = "<div class='card'><h2>No evaluations yet</h2><p class='muted'>Save an evaluation JSON report to start building history.</p><code>agent-reliability history save report.json --agent my-agent --version 1.0.0</code></div>"
-        chart = f"<div class='chart'><h2>Reliability trend</h2><svg viewBox='0 0 900 170' preserveAspectRatio='none'><polyline fill='none' stroke='currentColor' stroke-width='3' points='{points}'/></svg></div>" if records else ""
+        chart = f"<div class='chart'><h2>Reliability trend</h2><p class='muted'>Reliability score by saved evaluation (0–100).</p>{_trend_chart(records)}</div>" if records else ""
         table = f"<table class='table'><thead><tr><th>ID</th><th>Date</th><th>Agent</th><th>Reliability</th><th>Task success</th><th>Consistency</th><th>Failed</th></tr></thead><tbody>{rows}</tbody></table>" if records else ""
         body = f"<div class='nav'><h1>AI Agent Reliability</h1><p class='muted'>Evaluate, track and compare AI agent reliability over time.</p></div>{cards}<br>{chart}<br>{table}"
         return render_template_string(_page(body))
