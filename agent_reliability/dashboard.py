@@ -121,9 +121,11 @@ def _metric_change(current: float, previous: float | None, suffix: str = "", inv
     delta = current - previous
     if abs(delta) < 0.05:
         return "No change"
-    improved = delta < 0 if inverse else delta > 0
-    direction = "▲" if improved else "▼"
     value = abs(delta)
+    if inverse:
+        relation = "fewer" if delta < 0 else "more"
+        return f"{value:.0f} {relation} vs prior"
+    direction = "▲" if delta > 0 else "▼"
     return f"{direction} {value:.1f}{suffix} vs prior"
 
 
