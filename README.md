@@ -21,6 +21,15 @@ Run repeatedly → Measure reliability → Diagnose failures → Compare version
 
 **Local-first. Open source. No cloud account required.**
 
+### Common use cases
+
+- AI agent evaluation before production
+- LLM agent regression testing in CI/CD
+- LangChain and LangGraph agent testing
+- MCP tool-call and argument validation
+- Repeated-run reliability testing for stochastic agents
+- Comparing agent versions, prompts, models, and workflows
+
 ![AI Agent Reliability Toolkit dashboard](docs/images/dashboard.png)
 
 ## Why this exists
