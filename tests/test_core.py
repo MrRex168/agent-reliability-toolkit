@@ -78,3 +78,13 @@ def test_failure_classifier_handles_agent_errors():
     failure = classify_failure("agent error: TimeoutError: request timed out")
     assert failure.category == FailureCategory.AGENT_ERROR
     assert failure.severity == "HIGH"
+
+
+def test_failure_classifier_handles_regex_mismatches():
+    failure = classify_failure("regex did not match: 'order \\d+ is shipped'")
+    assert failure.category == FailureCategory.OUTPUT_MISMATCH
+
+
+def test_failure_classifier_handles_invalid_regex():
+    failure = classify_failure("invalid regex '[': unterminated character set")
+    assert failure.category == FailureCategory.OUTPUT_MISMATCH
