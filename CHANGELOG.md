@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## [1.0.1] - 2026-09-11
+
+### Fixed
+- Classify regex mismatches and invalid regular expressions as `OUTPUT_MISMATCH` failures instead of falling through to `UNKNOWN`.
+- Added regression tests for regex failure classification.
+
+### Improved
+- Strengthened README conversion and search discoverability with clearer positioning, common use cases, and the dashboard screenshot.
+- Added package discovery metadata, project URLs, keywords, and Python package classifiers.
+- Added pull request guidance, issue routing to Discussions, and a security policy.
+- Refined the public GitHub release notes and repository topics for easier discovery.
+
+### Release focus
+- Post-v1.0 polish, repository hygiene, and a small reliability-classification bug fix.
+- No new major product surface or infrastructure.
+
 ## [1.0.0] - 2026-09-07
 
 ### Added
