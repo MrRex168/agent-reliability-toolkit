@@ -1,10 +1,25 @@
 # AI Agent Reliability Toolkit
 
-**Evaluate whether an AI agent actually works reliably — before putting it into production.**
+**Your AI agent passed the demo. But will it pass 100 runs?**
 
-Open-source, local-first tooling for repeatedly testing agents, measuring reliability, inspecting tool usage, classifying failures, evaluating semantic quality, tracing executions, storing evaluation history, and catching regressions between versions.
+Test AI agents repeatedly, expose intermittent failures, understand why they fail, compare versions, and catch regressions **before production**.
 
 [![Tests](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/MrRex168/agent-reliability-toolkit/actions/workflows/test.yml)
+
+```text
+Run repeatedly → Measure reliability → Diagnose failures → Compare versions → Block regressions
+```
+
+### What you get
+
+- **Repeated agent evaluation** — catch failures a one-off demo hides
+- **Reliability + consistency scoring** — turn stochastic behavior into measurable signals
+- **Failure diagnostics** — classify output, structured-data, tool, and execution failures
+- **Regression gates** — fail CI when an agent gets worse
+- **Local dashboard + history** — see reliability trends across agent versions
+- **Agent-stack friendly** — LangChain, LangGraph, MCP traces, OpenTelemetry, and provider-agnostic LLM judging
+
+**Local-first. Open source. No cloud account required.**
 
 ![AI Agent Reliability Toolkit dashboard](docs/images/dashboard.png)
 
