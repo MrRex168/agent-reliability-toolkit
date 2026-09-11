@@ -289,11 +289,11 @@ This is an engineering baseline, not a safety certification or guarantee of prod
                  └────────┬─────────┘
                           │
               ┌───────────▼───────────┐
-              │ Failure Classification │
+              │ Failure Classification│
               └───────────┬───────────┘
                           │
           ┌───────────────▼────────────────┐
-          │ Reports / History / Dashboard │
+          │ Reports / History / Dashboard  │
           └───────────────┬────────────────┘
                           │
                  ┌────────▼─────────┐
