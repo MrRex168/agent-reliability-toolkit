@@ -46,7 +46,12 @@ def classify_failure(message: str) -> Failure:
 
     if "structured json" in text or "required key" in text or "expected json" in text:
         return Failure(FailureCategory.STRUCTURED_OUTPUT_ERROR, message, "HIGH")
-    if "missing expected text" in text or "expected exact output" in text:
+    if (
+        "missing expected text" in text
+        or "expected exact output" in text
+        or "regex did not match" in text
+        or "invalid regex" in text
+    ):
         return Failure(FailureCategory.OUTPUT_MISMATCH, message, "MEDIUM")
     return Failure(FailureCategory.UNKNOWN, message, "MEDIUM")
 
